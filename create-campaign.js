@@ -868,81 +868,117 @@ async function step8_keywordsAndAds(page) {
   await clickNext(page, 'Next (keywords and ads)');
 }
 
+// Dismiss "Confirm it's you" Google security dialog
+async function dismissConfirmDialog(page) {
+  const dismissed = await page.evaluate(() => {
+    const btns = document.querySelectorAll('button, [role="button"], material-button');
+    for (const btn of btns) {
+      const t = btn.textContent.trim();
+      if (t === 'Cancel' && btn.offsetHeight > 0) {
+        // Check if this is in a "Confirm it's you" dialog
+        const dialog = btn.closest('[role="dialog"], [class*="dialog"], [class*="modal"]') || btn.parentElement?.parentElement;
+        if (dialog && dialog.textContent.includes('Confirm')) {
+          btn.click();
+          return 'cancelled';
+        }
+      }
+    }
+    return null;
+  });
+  if (dismissed) {
+    console.log('  Dismissed "Confirm it\'s you" dialog.');
+    await page.waitForTimeout(1500);
+  }
+  return dismissed;
+}
+
 async function step9_budget(page) {
   console.log('\n[9/10] Setting budget...');
   await dismissDraftIfNeeded(page);
-  await screenshot(page, '08-budget-start');
-  await dumpFormFields(page);
+  await dismissConfirmDialog(page);
+  await screenshot(page, '09-budget-start');
 
-  // Find the budget input field
+  // Budget page uses radio buttons for preset amounts + "Set custom budget" option
+  // Click "Set custom budget" to enter our own amount
+  const customClicked = await page.evaluate(() => {
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      if (el.textContent.trim() === 'Set custom budget' && el.offsetHeight > 0 && el.offsetHeight < 50) {
+        el.scrollIntoView({ block: 'center' });
+        el.click();
+        return true;
+      }
+    }
+    return false;
+  });
+  if (customClicked) {
+    console.log('  Clicked: Set custom budget');
+    await page.waitForTimeout(1500);
+  }
+
+  // Now look for a text input to enter the budget amount
   let budgetSet = false;
 
-  // Try labeled budget fields
-  const budgetInputs = await page.$$('input[aria-label*="budget" i], input[aria-label*="Budget" i], input[aria-label*="amount" i]');
-  for (const field of budgetInputs) {
-    const visible = await field.isVisible().catch(() => false);
-    if (visible) {
-      await field.click();
-      await field.fill('');
-      await field.fill(CAMPAIGN.dailyBudget);
-      budgetSet = true;
-      console.log(`  Set daily budget: $${CAMPAIGN.dailyBudget}`);
-      break;
-    }
-  }
-
-  // Fallback: try number inputs
-  if (!budgetSet) {
-    const numInputs = await page.$$('input[type="number"]');
-    for (const field of numInputs) {
-      const visible = await field.isVisible().catch(() => false);
-      if (visible) {
-        await field.click();
-        await field.fill('');
-        await field.fill(CAMPAIGN.dailyBudget);
-        budgetSet = true;
-        console.log(`  Set budget via number input: $${CAMPAIGN.dailyBudget}`);
-        break;
-      }
-    }
-  }
-
-  // Fallback: try any visible text input that's near "budget" text
-  if (!budgetSet) {
-    budgetSet = await page.evaluate((budget) => {
-      const inputs = document.querySelectorAll('input');
-      for (const inp of inputs) {
-        if (inp.offsetHeight > 0 && inp.type !== 'hidden') {
-          // Check if nearby text mentions "budget"
-          const parent = inp.closest('div, section, fieldset');
-          if (parent && parent.textContent.toLowerCase().includes('budget')) {
-            inp.focus();
-            inp.value = '';
-            inp.value = budget;
-            inp.dispatchEvent(new Event('input', { bubbles: true }));
-            inp.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
-          }
+  // After clicking "Set custom budget", an input field should appear
+  const budgetInput = await page.evaluate((budget) => {
+    const inputs = document.querySelectorAll('input');
+    for (const inp of inputs) {
+      if (inp.offsetHeight > 0 && inp.type !== 'hidden' && inp.type !== 'radio') {
+        const label = (inp.getAttribute('aria-label') || '').toLowerCase();
+        const parent = inp.closest('div, section');
+        const context = parent ? parent.textContent.toLowerCase() : '';
+        if (label.includes('budget') || label.includes('amount') || label.includes('$') ||
+            context.includes('custom budget') || context.includes('daily budget')) {
+          inp.scrollIntoView({ block: 'center' });
+          inp.focus();
+          inp.value = '';
+          inp.value = budget;
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+          return 'input: ' + (inp.getAttribute('aria-label') || 'unlabeled');
         }
       }
-      return false;
-    }, CAMPAIGN.dailyBudget);
-    if (budgetSet) console.log(`  Set budget via fallback: $${CAMPAIGN.dailyBudget}`);
+    }
+    return null;
+  }, CAMPAIGN.dailyBudget);
+
+  if (budgetInput) {
+    budgetSet = true;
+    console.log(`  Set budget: $${CAMPAIGN.dailyBudget}/day (${budgetInput})`);
+  }
+
+  // Fallback: try any visible text/number input on the page
+  if (!budgetSet) {
+    const allInputs = await page.$$('input[type="text"], input[type="number"], input:not([type="radio"]):not([type="hidden"])');
+    for (const inp of allInputs) {
+      const visible = await inp.isVisible().catch(() => false);
+      if (visible) {
+        const label = await inp.getAttribute('aria-label').catch(() => '');
+        if (label && !label.includes('Explain')) {
+          await scrollAndClick(page, inp);
+          await inp.fill(CAMPAIGN.dailyBudget);
+          budgetSet = true;
+          console.log(`  Set budget via fallback: $${CAMPAIGN.dailyBudget} (${label})`);
+          break;
+        }
+      }
+    }
   }
 
   if (!budgetSet) {
-    console.log('  WARNING: Could not find budget field!');
+    console.log('  WARNING: Could not set custom budget — using Google\'s default.');
   }
 
   await page.waitForTimeout(humanDelay());
-  await screenshot(page, '08-budget-done');
+  await screenshot(page, '09-budget-done');
   await clickNext(page, 'Next (budget)');
 }
 
 async function step10_review(page) {
   console.log('\n[10/10] Review page...');
   await dismissDraftIfNeeded(page);
-  await screenshot(page, '09-review');
+  await dismissConfirmDialog(page);
+  await screenshot(page, '10-review');
 
   console.log('\n========================================');
   console.log('  CAMPAIGN READY FOR REVIEW');
