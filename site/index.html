@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phoenix Drainage Solutions | French Drain Installation & Yard Drainage</title>
+  <meta name="description" content="Expert french drain installation and yard drainage solutions in Phoenix, AZ. Free estimates. Licensed & insured. Stop yard flooding today.">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; line-height: 1.6; }
+
+    /* Header */
+    .header {
+      background: #1a3a5c;
+      color: white;
+      padding: 12px 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .header-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .logo span { color: #4db8ff; }
+    .header-phone {
+      background: #e8a020;
+      color: white;
+      padding: 10px 24px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 1.05rem;
+      transition: background 0.2s;
+    }
+    .header-phone:hover { background: #d4911a; }
+
+    /* Hero */
+    .hero {
+      background: linear-gradient(135deg, #1a3a5c 0%, #2a5a8c 100%);
+      color: white;
+      padding: 60px 20px 70px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      max-width: 700px;
+      margin: 0 auto 16px;
+      line-height: 1.2;
+    }
+    .hero h1 span { color: #4db8ff; }
+    .hero p {
+      font-size: 1.15rem;
+      opacity: 0.9;
+      max-width: 550px;
+      margin: 0 auto 32px;
+    }
+    .cta-btn {
+      display: inline-block;
+      background: #e8a020;
+      color: white;
+      padding: 16px 40px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 1.15rem;
+      transition: transform 0.2s, background 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .cta-btn:hover { background: #d4911a; transform: translateY(-2px); }
+    .hero-badges {
+      margin-top: 24px;
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      font-size: 0.9rem;
+      opacity: 0.85;
+    }
+    .hero-badges div { display: flex; align-items: center; gap: 6px; }
+
+    /* Trust bar */
+    .trust-bar {
+      background: #f0f4f8;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid #dde3ea;
+    }
+    .trust-bar-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      flex-wrap: wrap;
+    }
+    .trust-item {
+      font-size: 0.95rem;
+      color: #3a5a7c;
+      font-weight: 600;
+    }
+
+    /* Services */
+    .services {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 60px 20px;
+    }
+    .services h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 40px;
+      color: #1a3a5c;
+    }
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .service-card {
+      border: 1px solid #e0e6ec;
+      border-radius: 10px;
+      padding: 28px;
+      transition: box-shadow 0.2s;
+    }
+    .service-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+    .service-card h3 {
+      font-size: 1.15rem;
+      color: #1a3a5c;
+      margin-bottom: 10px;
+    }
+    .service-card p { color: #555; font-size: 0.95rem; }
+    .service-icon { font-size: 2rem; margin-bottom: 12px; }
+
+    /* Why us */
+    .why-us {
+      background: #f7f9fb;
+      padding: 60px 20px;
+    }
+    .why-us-inner {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .why-us h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 40px;
+      color: #1a3a5c;
+    }
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 28px;
+    }
+    .why-item { text-align: center; }
+    .why-item h4 { color: #1a3a5c; margin-bottom: 8px; font-size: 1.05rem; }
+    .why-item p { color: #555; font-size: 0.9rem; }
+    .why-icon { font-size: 2.2rem; margin-bottom: 10px; }
+
+    /* CTA section */
+    .cta-section {
+      background: linear-gradient(135deg, #1a3a5c, #2a5a8c);
+      color: white;
+      text-align: center;
+      padding: 50px 20px;
+    }
+    .cta-section h2 { font-size: 1.8rem; margin-bottom: 12px; }
+    .cta-section p { opacity: 0.9; margin-bottom: 28px; font-size: 1.05rem; }
+
+    /* Form */
+    .form-section {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 60px 20px;
+    }
+    .form-section h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 8px;
+      color: #1a3a5c;
+    }
+    .form-section .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 32px;
+    }
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #333;
+      font-size: 0.9rem;
+    }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #ccd3da;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+      outline: none;
+      border-color: #4db8ff;
+      box-shadow: 0 0 0 3px rgba(77,184,255,0.15);
+    }
+    .form-group textarea { resize: vertical; min-height: 90px; }
+    .form-submit {
+      width: 100%;
+      padding: 16px;
+      background: #e8a020;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 8px;
+    }
+    .form-submit:hover { background: #d4911a; }
+
+    /* Footer */
+    .footer {
+      background: #111;
+      color: #888;
+      text-align: center;
+      padding: 30px 20px;
+      font-size: 0.85rem;
+    }
+    .footer a { color: #4db8ff; text-decoration: none; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 1.7rem; }
+      .hero-badges { flex-direction: column; gap: 10px; }
+      .header-inner { flex-direction: column; gap: 10px; }
+      .trust-bar-inner { flex-direction: column; gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">Phoenix <span>Drainage</span> Solutions</div>
+      <a href="tel:+16025551234" class="header-phone">&#9742; (602) 555-1234</a>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1>Stop Yard Flooding.<br><span>Expert Drainage Installation</span> in Phoenix.</h1>
+    <p>French drains, channel drains, and complete yard drainage systems. Licensed, insured, and built to handle monsoon season.</p>
+    <a href="#quote" class="cta-btn">Get a Free Estimate</a>
+    <div class="hero-badges">
+      <div>&#10003; Licensed &amp; Insured</div>
+      <div>&#10003; Free Estimates</div>
+      <div>&#10003; Same-Week Service</div>
+    </div>
+  </section>
+
+  <!-- Trust bar -->
+  <div class="trust-bar">
+    <div class="trust-bar-inner">
+      <div class="trust-item">&#9733; 5.0 Google Rating</div>
+      <div class="trust-item">&#9201; Serving Phoenix Metro Since 2024</div>
+      <div class="trust-item">&#128736; 500+ Drains Installed</div>
+      <div class="trust-item">&#9748; Monsoon-Ready Systems</div>
+    </div>
+  </div>
+
+  <!-- Services -->
+  <section class="services">
+    <h2>Drainage Services We Offer</h2>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-icon">&#127754;</div>
+        <h3>French Drain Installation</h3>
+        <p>Subsurface drainage systems that redirect water away from your foundation, yard, and landscaping. Gravel-filled trenches with perforated pipe.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">&#128167;</div>
+        <h3>Channel &amp; Trench Drains</h3>
+        <p>Surface-level drainage for driveways, patios, pool decks, and walkways. Prevents water pooling and protects concrete surfaces.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">&#127968;</div>
+        <h3>Yard Drainage Systems</h3>
+        <p>Complete solutions for standing water, soggy grass, and poor grading. Catch basins, dry wells, and underground pipe networks.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">&#9748;</div>
+        <h3>Monsoon Flood Prevention</h3>
+        <p>Phoenix-specific solutions designed for sudden heavy rainfall. Protect your property before monsoon season hits.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">&#128736;</div>
+        <h3>Drainage Repair &amp; Regrading</h3>
+        <p>Fix failed drainage, clogged french drains, and improper grading. We diagnose and solve existing drainage problems.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">&#127793;</div>
+        <h3>Downspout &amp; Gutter Drainage</h3>
+        <p>Underground downspout extensions and pop-up emitters. Route roof water safely away from your foundation.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Us -->
+  <section class="why-us">
+    <div class="why-us-inner">
+      <h2>Why Phoenix Homeowners Choose Us</h2>
+      <div class="why-grid">
+        <div class="why-item">
+          <div class="why-icon">&#128176;</div>
+          <h4>Transparent Pricing</h4>
+          <p>Free on-site estimates with no hidden fees. We quote the job, not the hour.</p>
+        </div>
+        <div class="why-item">
+          <div class="why-icon">&#9889;</div>
+          <h4>Fast Turnaround</h4>
+          <p>Most jobs completed in 1-2 days. We schedule within the week, not the month.</p>
+        </div>
+        <div class="why-item">
+          <div class="why-icon">&#128170;</div>
+          <h4>Built to Last</h4>
+          <p>Commercial-grade pipe, proper slope, and clean gravel. Our drains work for decades, not seasons.</p>
+        </div>
+        <div class="why-item">
+          <div class="why-icon">&#127774;</div>
+          <h4>Phoenix Specialists</h4>
+          <p>We know caliche soil, monsoon patterns, and desert drainage. Not a franchise — a local crew.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Water Problems Don't Fix Themselves</h2>
+    <p>Every monsoon season without proper drainage risks foundation damage, landscape erosion, and costly repairs.</p>
+    <a href="#quote" class="cta-btn">Get Your Free Estimate Today</a>
+  </section>
+
+  <!-- Form -->
+  <section class="form-section" id="quote">
+    <h2>Request a Free Estimate</h2>
+    <p class="subtitle">We'll get back to you within a few hours.</p>
+    <form action="#" method="POST" onsubmit="alert('Estimate request submitted! We will call you shortly.'); return false;">
+      <div class="form-group">
+        <label for="name">Your Name</label>
+        <input type="text" id="name" name="name" placeholder="John Smith" required>
+      </div>
+      <div class="form-group">
+        <label for="phone">Phone Number</label>
+        <input type="tel" id="phone" name="phone" placeholder="(602) 555-1234" required>
+      </div>
+      <div class="form-group">
+        <label for="email">Email (optional)</label>
+        <input type="email" id="email" name="email" placeholder="john@email.com">
+      </div>
+      <div class="form-group">
+        <label for="service">What Do You Need?</label>
+        <select id="service" name="service">
+          <option value="french-drain">French Drain Installation</option>
+          <option value="channel-drain">Channel / Trench Drain</option>
+          <option value="yard-drainage">Yard Drainage System</option>
+          <option value="drainage-repair">Drainage Repair</option>
+          <option value="downspout">Downspout / Gutter Drainage</option>
+          <option value="other">Other / Not Sure</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="details">Describe the Problem</label>
+        <textarea id="details" name="details" placeholder="E.g. Water pools near my back patio every time it rains..."></textarea>
+      </div>
+      <div class="form-group">
+        <label for="zip">ZIP Code</label>
+        <input type="text" id="zip" name="zip" placeholder="85001" required>
+      </div>
+      <button type="submit" class="form-submit">Send My Free Estimate Request</button>
+    </form>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>Phoenix Drainage Solutions &mdash; Serving Phoenix, Scottsdale, Tempe, Mesa, Chandler &amp; Gilbert</p>
+    <p style="margin-top: 6px;">Licensed &amp; Insured | <a href="tel:+16025551234">(602) 555-1234</a></p>
+    <p style="margin-top: 12px;">&copy; 2026 Phoenix Drainage Solutions. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>
