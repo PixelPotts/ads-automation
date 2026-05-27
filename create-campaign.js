@@ -168,25 +168,41 @@ async function clickNext(page, label) {
     'button:has-text("Next")',
   ], label || 'Next button', 10000);
 
-  // Fallback: try the forward arrow/chevron button at bottom right
+  // Fallback: try the forward arrow/chevron at bottom right (Google Ads uses this)
   if (!clicked) {
     clicked = await page.evaluate(() => {
-      // Look for a clickable element at bottom-right that's a navigation arrow
-      const els = document.querySelectorAll('button, [role="button"], material-button, a');
+      const els = document.querySelectorAll('button, [role="button"], material-button, a, [class*="nav"]');
       for (const el of els) {
         const rect = el.getBoundingClientRect();
         const text = el.textContent.trim();
-        // Bottom-right area, small element, arrow-like text
-        if (rect.right > window.innerWidth - 100 && rect.bottom > window.innerHeight - 80 &&
+        // Bottom-right area, navigation element
+        if (rect.right > window.innerWidth - 150 && rect.bottom > window.innerHeight - 100 &&
+            el.offsetHeight > 0 && el.offsetHeight < 80 &&
             (text === '>' || text === 'arrow_forward' || text === 'chevron_right' ||
-             text === 'navigate_next' || el.querySelector('[class*="arrow"], [class*="forward"], [class*="next"]'))) {
+             text === 'navigate_next' || text === '' || text.length <= 2)) {
           el.click();
-          return true;
+          return 'arrow at x=' + Math.round(rect.left) + ' y=' + Math.round(rect.top);
         }
       }
-      return false;
+      return null;
     });
-    if (clicked) console.log(`  Clicked: ${label} (forward arrow fallback)`);
+    if (clicked) console.log(`  Clicked: ${label} (${clicked})`);
+  }
+
+  // Last fallback: try clicking a material-button anywhere on the page with "Next" text
+  if (!clicked) {
+    clicked = await page.evaluate(() => {
+      const allEls = document.querySelectorAll('*');
+      for (const el of allEls) {
+        if (el.textContent.trim() === 'Next' && el.offsetHeight > 0 && el.offsetHeight < 60) {
+          el.click();
+          const rect = el.getBoundingClientRect();
+          return 'text Next at y=' + Math.round(rect.top);
+        }
+      }
+      return null;
+    });
+    if (clicked) console.log(`  Clicked: ${label} (${clicked})`);
   }
 
   if (clicked) {
@@ -460,12 +476,12 @@ async function step6_campaignSettings(page) {
   console.log('  Enter another location:', locRadioClicked || 'NOT FOUND');
 
   if (locRadioClicked) {
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(2000);
 
-    // Now a search input should appear — find it
+    // The input has placeholder "Enter a location to include or exclude"
     const locInput = await page.waitForSelector(
-      'input[placeholder*="location" i], input[aria-label*="location" i], input[placeholder*="Search" i]',
-      { timeout: 5000 }
+      'input[placeholder*="include or exclude" i], input[placeholder*="location" i], input[aria-label*="location" i]',
+      { timeout: 8000 }
     ).catch(() => null);
 
     if (locInput) {
@@ -474,13 +490,14 @@ async function step6_campaignSettings(page) {
       console.log(`  Typed location: ${CAMPAIGN.targetLocation}`);
       await page.waitForTimeout(2500); // wait for suggestions
 
-      // Click the Phoenix suggestion
+      // Click the Phoenix suggestion from the dropdown
       const suggClicked = await page.evaluate((loc) => {
-        const items = document.querySelectorAll('[role="option"], [role="listbox"] *, li');
+        const items = document.querySelectorAll('[role="option"], [role="listbox"] *, li, [class*="suggestion"]');
         for (const item of items) {
-          if (item.textContent.includes(loc) && item.offsetHeight > 0) {
+          const t = item.textContent;
+          if (t.includes(loc) && item.offsetHeight > 0 && item.offsetHeight < 100) {
             item.click();
-            return item.textContent.trim().substring(0, 80);
+            return t.trim().substring(0, 80);
           }
         }
         return null;
@@ -490,20 +507,21 @@ async function step6_campaignSettings(page) {
       // If no suggestion dropdown, try Target/Include button
       if (!suggClicked) {
         await page.waitForTimeout(1000);
-        await page.evaluate(() => {
-          const btns = document.querySelectorAll('button, [role="button"]');
+        const targetClicked = await page.evaluate(() => {
+          const btns = document.querySelectorAll('button, [role="button"], material-button');
           for (const btn of btns) {
             const t = btn.textContent.trim();
             if ((t === 'Target' || t === 'Include') && btn.offsetHeight > 0) {
               btn.click();
-              return true;
+              return t;
             }
           }
+          return null;
         });
+        if (targetClicked) console.log(`  Clicked: ${targetClicked} button`);
       }
     } else {
       console.log('  Location search input not found after clicking radio.');
-      // Try dumping what appeared
       await dumpFormFields(page);
     }
   }
@@ -511,17 +529,36 @@ async function step6_campaignSettings(page) {
   await page.waitForTimeout(humanDelay());
 
   // --- EU POLITICAL ADS ---
+  // Scroll down to see EU political ads section
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1000);
+
   // Select "No, this campaign doesn't have EU political ads"
+  // Must be precise: find the SPECIFIC label for "No" (not a parent that contains both Yes and No)
   const euClicked = await page.evaluate(() => {
-    const labels = document.querySelectorAll('label, span, div');
-    for (const el of labels) {
-      const t = el.textContent.trim();
-      if (t.includes("doesn't have EU political ads") && el.offsetHeight > 0) {
-        const radio = el.closest('label')?.querySelector('input[type="radio"]') ||
-                      el.parentElement?.querySelector('input[type="radio"]');
-        if (radio) { radio.click(); return 'clicked radio'; }
-        el.click();
-        return 'clicked label';
+    // Strategy: find all radio inputs, check the associated label text
+    const radios = document.querySelectorAll('input[type="radio"]');
+    for (const radio of radios) {
+      // Walk up to find the label text
+      const label = radio.closest('label') || radio.parentElement;
+      if (label) {
+        const labelText = label.textContent.trim();
+        if (labelText.includes("doesn't have EU political") || labelText.includes("doesn\u2019t have EU political")) {
+          radio.click();
+          return 'clicked No radio: ' + labelText.substring(0, 60);
+        }
+      }
+    }
+    // Fallback: find the text node and click its nearest radio sibling
+    const spans = document.querySelectorAll('span');
+    for (const span of spans) {
+      const t = span.textContent.trim();
+      if (t.startsWith('No') && t.includes('EU political') && span.offsetHeight > 0) {
+        const parent = span.closest('[role="radiogroup"]') || span.parentElement;
+        const radio = parent?.querySelector('input[type="radio"]');
+        if (radio) { radio.click(); return 'clicked via span: ' + t.substring(0, 60); }
+        span.click();
+        return 'clicked span: ' + t.substring(0, 60);
       }
     }
     return null;
