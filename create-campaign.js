@@ -523,23 +523,41 @@ async function step6_campaignSettings(page) {
     await page.waitForTimeout(500);
     await page.keyboard.type(CAMPAIGN.targetLocation, { delay: 80 });
     console.log(`  Typed location: ${CAMPAIGN.targetLocation}`);
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(3000); // wait for suggestion dropdown
 
-    // Click Target button or suggestion
-    const targeted = await page.evaluate((loc) => {
-      // Look for suggestion items or Target buttons
-      const all = document.querySelectorAll('[role="option"], li, [class*="suggestion"], button, [role="button"]');
-      for (const el of all) {
+    // Click the "Include" button WITHIN the suggestion row (not the row text)
+    const includeClicked = await page.evaluate((loc) => {
+      // Strategy 1: Find "Include" button near Phoenix suggestion
+      const allEls = document.querySelectorAll('button, [role="button"], a, material-button, span');
+      for (const el of allEls) {
         const t = el.textContent.trim();
-        if ((t.includes(loc) || t === 'Target') && el.offsetHeight > 0 && el.offsetHeight < 100) {
-          el.scrollIntoView({ block: 'center' });
+        if (t === 'Include' && el.offsetHeight > 0 && el.offsetHeight < 50) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top > 100 && rect.top < 800) {
+            el.click();
+            return 'Include at y=' + Math.round(rect.top);
+          }
+        }
+      }
+      // Strategy 2: Find "Target" button
+      for (const el of allEls) {
+        const t = el.textContent.trim();
+        if (t === 'Target' && el.offsetHeight > 0 && el.offsetHeight < 50) {
           el.click();
-          return t.substring(0, 80);
+          return 'Target button';
         }
       }
       return null;
     }, CAMPAIGN.targetLocation);
-    console.log(`  Location target: ${targeted || 'no suggestion/button found'}`);
+    console.log(`  Location include: ${includeClicked || 'NOT FOUND'}`);
+
+    // Verify: check if a location chip/badge appeared
+    await page.waitForTimeout(2000);
+    const verified = await page.evaluate((loc) => {
+      const body = document.body.textContent;
+      return body.includes('Targeted') && body.includes(loc) ? 'verified' : null;
+    }, CAMPAIGN.targetLocation);
+    console.log(`  Location verified: ${verified || 'not confirmed — may need retry'}`);
   } else {
     console.log('  WARNING: Location input not found, using default (All countries).');
   }
