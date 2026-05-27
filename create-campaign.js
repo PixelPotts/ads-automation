@@ -7,7 +7,7 @@ const path = require('path');
 const PROFILE_DIR = path.join(__dirname, 'chrome-profile');
 const OUTPUT_DIR = path.join(__dirname, 'output');
 const ADS_URL = 'https://ads.google.com';
-const ACCOUNT_ID = '7888'; // General Carpentry — test account (use 7752 for production)
+const ACCOUNT_ID = '0849'; // Production account
 const TEST_MODE = process.argv.includes('--test');
 
 // Human-like random delay between actions (1.5–4s)
