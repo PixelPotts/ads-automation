@@ -349,7 +349,8 @@ async function step2_selectGoal(page) {
 async function step3_selectCampaignType(page) {
   console.log('\n[3/10] Selecting Search campaign type...');
 
-  // Click Search card
+  // Some accounts show a "Search" campaign type card, others skip straight to
+  // a combined page with conversion goals + campaign name.
   const typeClicked = await page.evaluate(() => {
     const allEls = document.querySelectorAll('*');
     for (const el of allEls) {
@@ -373,11 +374,16 @@ async function step3_selectCampaignType(page) {
     }
     return null;
   });
-  console.log('  Search type:', typeClicked || 'NOT FOUND');
+  console.log('  Search type:', typeClicked || 'NOT FOUND (may be combined page)');
   await page.waitForTimeout(humanDelay());
+
+  // --- Handle "Page view" conversion goal if present ---
+  // Some accounts show conversion goals on this page (e.g. "Page view" radio)
+  await selectPageViewGoalIfPresent(page);
+
   await screenshot(page, '03-type-selected');
 
-  // Scroll down and click Continue — this may reveal campaign name section
+  // Scroll down and click Continue
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(humanDelay());
 
@@ -392,6 +398,31 @@ async function step3_selectCampaignType(page) {
   await screenshot(page, '03b-after-continue');
 }
 
+// Click "Page view" conversion goal radio if present on current page
+async function selectPageViewGoalIfPresent(page) {
+  const clicked = await page.evaluate(() => {
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      const t = el.textContent.trim();
+      if (t.startsWith('Page view') && el.offsetHeight > 0 && el.offsetHeight < 120 && el.offsetWidth > 200) {
+        // Click the card/row containing "Page view"
+        const radio = el.querySelector('input[type="radio"]');
+        if (radio) {
+          radio.click();
+          return 'radio inside Page view card';
+        }
+        el.click();
+        return 'Page view card at y=' + Math.round(el.getBoundingClientRect().top);
+      }
+    }
+    return null;
+  });
+  if (clicked) {
+    console.log(`  Conversion goal (Page view): ${clicked}`);
+    await page.waitForTimeout(1000);
+  }
+}
+
 async function step4_campaignName(page) {
   console.log('\n[4/10] Setting campaign name + entering wizard...');
 
@@ -399,6 +430,9 @@ async function step4_campaignName(page) {
   await dismissDraftIfNeeded(page);
   await page.waitForTimeout(1000);
   await dismissDraftIfNeeded(page);
+
+  // Safety: select Page view goal if it appears on this page (some accounts)
+  await selectPageViewGoalIfPresent(page);
 
   // Scroll down to reveal campaign name section
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
