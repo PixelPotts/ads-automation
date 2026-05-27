@@ -9,6 +9,7 @@ const OUTPUT_DIR = path.join(__dirname, 'output');
 const ADS_URL = 'https://ads.google.com';
 const KW_PLANNER_URL = 'https://ads.google.com/aw/keywordplanner/home';
 const BATCH_SIZE = 10;
+const ACCOUNT_ID = '7752'; // last 4 digits of the Google Ads account to auto-select
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,6 +105,30 @@ async function launchBrowser() {
   return context;
 }
 
+async function selectAccountIfNeeded(page) {
+  // Check if we're on the account picker page
+  const pickerText = await page.textContent('body').catch(() => '');
+  if (!pickerText.includes('Select a Google Ads account')) return false;
+
+  console.log('Account picker detected — looking for account ending in', ACCOUNT_ID, '...');
+
+  // Click the row containing our account ID
+  const accountRow = await page.$(`text=${ACCOUNT_ID}`);
+  if (accountRow) {
+    await accountRow.click();
+    console.log('Clicked account', ACCOUNT_ID, '— waiting for dashboard...');
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(5000);
+    console.log('Now on:', page.url());
+    return true;
+  }
+
+  console.error('ERROR: Could not find account matching', ACCOUNT_ID);
+  ensureDir(OUTPUT_DIR);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-account-picker.png'), fullPage: true });
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 1 — Login
 // ---------------------------------------------------------------------------
@@ -125,13 +150,17 @@ async function doLogin() {
     process.stdin.once('data', resolve);
   });
 
-  // Quick check — see if we're on an ads page
+  // Quick check — see if we're on a Google Ads-related page
   const url = page.url();
-  if (url.includes('ads.google.com')) {
+  const validDomains = ['ads.google.com', 'business.google.com', 'google.com/ads'];
+  if (validDomains.some(d => url.includes(d))) {
     console.log('Auth looks good — current URL:', url);
+  } else if (url.includes('accounts.google.com') || url.includes('signin')) {
+    console.log('WARNING: Still on sign-in page. Auth may not have completed.');
+    console.log('Current URL:', url);
   } else {
-    console.log('Warning: current URL does not look like Google Ads:', url);
-    console.log('You may need to sign in again next time.');
+    console.log('Current URL:', url);
+    console.log('(Session cookies saved regardless — try scraping to see if auth persisted.)');
   }
 
   await context.close();
@@ -145,12 +174,23 @@ async function doLogin() {
 
 async function waitForSelector(page, selectors, timeout = 30000) {
   // Try multiple selectors, return the first one found
+  // Handles navigation-induced context destruction gracefully
   if (typeof selectors === 'string') selectors = [selectors];
   const start = Date.now();
   while (Date.now() - start < timeout) {
     for (const sel of selectors) {
-      const el = await page.$(sel);
-      if (el) return { el, selector: sel };
+      try {
+        const el = await page.$(sel);
+        if (el) return { el, selector: sel };
+      } catch (e) {
+        if (e.message.includes('Execution context was destroyed') || e.message.includes('navigation')) {
+          console.log('  (page navigating, waiting for it to settle...)');
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          await page.waitForTimeout(2000);
+          break; // restart selector loop after navigation settles
+        }
+        throw e;
+      }
     }
     await page.waitForTimeout(500);
   }
@@ -160,7 +200,17 @@ async function waitForSelector(page, selectors, timeout = 30000) {
 async function navigateToForecasts(page) {
   console.log('Navigating to Keyword Planner...');
   await page.goto(KW_PLANNER_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForTimeout(3000);
+  // Wait for any redirects to settle
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(4000);
+  console.log('Landed on:', page.url());
+
+  // Handle account picker if it appears again after nav
+  await selectAccountIfNeeded(page);
+
+  ensureDir(OUTPUT_DIR);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-nav.png'), fullPage: true });
+  console.log('Screenshot saved to output/debug-nav.png');
 
   // Google Ads may land on different views — look for the
   // "Get search volume and forecasts" option
@@ -265,28 +315,57 @@ async function scrapeResults(page) {
     throw new Error('Results table not found');
   }
 
+  // Dump row HTML for debugging
+  const debugHtml = await page.evaluate(() => {
+    const rows = document.querySelectorAll('div[role="row"]');
+    return Array.from(rows).map((r, i) => {
+      const cells = r.querySelectorAll('div[role="gridcell"], div[role="columnheader"], header-tools-cell');
+      const cellTexts = Array.from(cells).map(c => c.textContent.trim());
+      return `ROW ${i} (${cells.length} cells): ${JSON.stringify(cellTexts)}\nHTML: ${r.innerHTML.substring(0, 1000)}`;
+    }).join('\n\n');
+  });
+  fs.writeFileSync(path.join(OUTPUT_DIR, 'debug-rows.txt'), debugHtml);
+  console.log('Row debug dumped to output/debug-rows.txt');
+
   // Extract rows from the table
+  // Google Ads Keyword Planner "Saved keywords" table columns (0-indexed):
+  // 0: checkbox, 1: Keyword, 2: Avg. monthly searches, 3: Three month change,
+  // 4: YoY change, 5: Competition, 6: Ad impression share,
+  // 7: Top of page bid (low range), 8: Top of page bid (high range)
   const rows = await page.evaluate(() => {
     const results = [];
-    // Try multiple approaches to find rows
-    const allRows = document.querySelectorAll('tr[data-row-id], table tr, div[role="row"]');
+    // Google Ads uses custom elements: tools-cell, ess-cell with role="gridcell"
+    const allRows = document.querySelectorAll('div[role="row"]');
 
     for (const row of allRows) {
-      const cells = row.querySelectorAll('td, div[role="gridcell"]');
-      if (cells.length < 3) continue; // skip header-like or empty rows
+      // Use generic [role="gridcell"] to catch all custom element types
+      const cells = row.querySelectorAll('[role="gridcell"]');
+      if (cells.length < 5) continue;
 
       const texts = Array.from(cells).map(c => c.textContent.trim());
 
-      // Heuristic: first cell is keyword, then we look for recognizable patterns
-      // Google Ads table typically: Keyword | Avg monthly searches | Competition | Top of page bid (low) | Top of page bid (high)
-      if (texts[0] && texts[0].length > 1 && !texts[0].match(/^(Keyword|Search|Ad)/i)) {
-        results.push({
-          keyword: texts[0],
-          avgMonthlySearches: texts[1] || '',
-          competition: texts[2] || '',
-          cpcLow: texts[3] || '',
-          cpcHigh: texts[4] || '',
-        });
+      // Skip header row
+      if (texts.some(t => t.includes('Keyword') && t.length < 20)) continue;
+
+      // Layout: [checkbox, keyword, avg searches, 3mo change, yoy change, competition, ad impr, cpc low, cpc high, account status]
+      // Index 0 = checkbox/tools-cell, 1 = keyword, 2 = avg monthly searches, etc.
+      const kwCell = cells[1];
+      let keyword = kwCell?.querySelector('[title]')?.getAttribute('title')
+        || kwCell?.textContent?.trim()
+        || texts[1];
+
+      // Clean up keyword (remove trailing ellipsis artifacts)
+      keyword = keyword.replace(/\s*…$/, '').replace(/\s*\.\.\.$/, '');
+
+      const avgMonthlySearches = texts[2] || '';
+      // texts[3] = three month change, texts[4] = yoy change — skip
+      const competition = texts[5] || '';
+      // texts[6] = ad impression share — skip
+      const cpcLow = texts[7] || '';
+      const cpcHigh = texts[8] || '';
+
+      if (keyword && keyword.length > 0) {
+        results.push({ keyword, avgMonthlySearches, competition, cpcLow, cpcHigh });
       }
     }
     return results;
@@ -306,13 +385,18 @@ async function doScrape(keywords) {
   await page.waitForTimeout(3000);
 
   const url = page.url();
-  if (url.includes('accounts.google.com') || url.includes('signin')) {
+  if (url.includes('accounts.google.com/signin') || url.includes('accounts.google.com/v3/signin')) {
     console.error('ERROR: Not logged in. Run `node planner.js --login` first.');
     await context.close();
     process.exit(1);
   }
 
-  console.log('Logged in — current URL:', url);
+  console.log('Authenticated — current URL:', url);
+
+  // Handle account picker if it appears
+  await selectAccountIfNeeded(page);
+
+  console.log('Attempting to navigate to Keyword Planner...');
 
   const allResults = [];
   const batches = chunk(keywords, BATCH_SIZE);
