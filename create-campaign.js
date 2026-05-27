@@ -222,7 +222,7 @@ async function detectWizardStep(page) {
 // ---------------------------------------------------------------------------
 
 async function step1_navigate(page) {
-  console.log('\n[1/9] Navigating to campaign creation...');
+  console.log('\n[1/10] Navigating to campaign creation...');
 
   await page.goto(ADS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(humanDelay());
@@ -241,7 +241,7 @@ async function step1_navigate(page) {
 }
 
 async function step2_selectGoal(page) {
-  console.log('\n[2/9] Selecting campaign goal (Website traffic)...');
+  console.log('\n[2/10] Selecting campaign goal (Website traffic)...');
 
   const goalClicked = await page.evaluate(() => {
     const allEls = document.querySelectorAll('*');
@@ -282,8 +282,8 @@ async function step2_selectGoal(page) {
   await page.waitForTimeout(humanDelay());
 }
 
-async function step3_typeAndName(page) {
-  console.log('\n[3/9] Selecting Search type + campaign name...');
+async function step3_selectCampaignType(page) {
+  console.log('\n[3/10] Selecting Search campaign type...');
 
   // Click Search card
   const typeClicked = await page.evaluate(() => {
@@ -311,27 +311,12 @@ async function step3_typeAndName(page) {
   });
   console.log('  Search type:', typeClicked || 'NOT FOUND');
   await page.waitForTimeout(humanDelay());
+  await screenshot(page, '03-type-selected');
 
-  // Scroll down to campaign name
+  // Scroll down and click Continue — this may reveal campaign name section
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(humanDelay());
 
-  // Set campaign name
-  const nameInput = await page.$('input[aria-label*="Campaign name"], input[aria-label*="campaign name"]');
-  if (nameInput) {
-    await nameInput.click();
-    await nameInput.fill('');
-    await page.waitForTimeout(500);
-    await nameInput.type(CAMPAIGN.name, { delay: 50 });
-    console.log(`  Campaign name: ${CAMPAIGN.name}`);
-  } else {
-    console.log('  WARNING: Campaign name field not found');
-  }
-
-  await page.waitForTimeout(humanDelay());
-  await screenshot(page, '03-type-and-name');
-
-  // Click Continue — this transitions to the left-nav wizard
   await waitAndClick(page, [
     'button:has-text("Continue")',
     'material-button:has-text("Continue")',
@@ -339,15 +324,68 @@ async function step3_typeAndName(page) {
 
   await page.waitForTimeout(humanDelay());
   await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(humanDelay());
+  await screenshot(page, '03b-after-continue');
+}
+
+async function step4_campaignName(page) {
+  console.log('\n[4/10] Setting campaign name + entering wizard...');
+
+  // Handle draft dialog if it appeared
+  await dismissDraftIfNeeded(page);
+  await page.waitForTimeout(1000);
+  await dismissDraftIfNeeded(page);
+
+  // Scroll down to reveal campaign name section
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1500);
+
+  // Wait for campaign name input to appear (it renders lazily)
+  const nameInput = await page.waitForSelector(
+    'input[aria-label*="Campaign name"], input[aria-label*="campaign name"]',
+    { timeout: 10000 }
+  ).catch(() => null);
+
+  if (nameInput) {
+    await nameInput.click();
+    await nameInput.fill('');
+    await page.waitForTimeout(500);
+    await nameInput.type(CAMPAIGN.name, { delay: 50 });
+    console.log(`  Campaign name: ${CAMPAIGN.name}`);
+  } else {
+    console.log('  WARNING: Campaign name field not found — using default.');
+  }
+
+  await page.waitForTimeout(humanDelay());
+  await screenshot(page, '04-name-set');
+
+  // Click Continue/Next to enter the left-nav wizard
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(800);
+
+  // Try Next first (button may have changed), then Continue
+  let clicked = await waitAndClick(page, [
+    'button:has-text("Next")',
+    'material-button:has-text("Next")',
+  ], 'Next (enter wizard)', 5000);
+
+  if (!clicked) {
+    clicked = await waitAndClick(page, [
+      'button:has-text("Continue")',
+      'material-button:has-text("Continue")',
+    ], 'Continue (enter wizard)', 10000);
+  }
+
+  await page.waitForTimeout(humanDelay());
+  await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(2000);
 
-  // Draft dialog often appears here
+  // Draft dialog may appear after this transition
   await dismissDraftIfNeeded(page);
-  // Check again after a moment (sometimes it loads slowly)
   await page.waitForTimeout(1500);
   await dismissDraftIfNeeded(page);
 
-  await screenshot(page, '03b-entered-wizard');
+  await screenshot(page, '04b-entered-wizard');
   const wizState = await detectWizardStep(page);
   console.log('  Wizard state:', JSON.stringify(wizState));
 }
@@ -357,8 +395,8 @@ async function step3_typeAndName(page) {
 // Each step: screenshot, do work (if any), click Next
 // ---------------------------------------------------------------------------
 
-async function step4_bidding(page) {
-  console.log('\n[4/9] Bidding page (accepting defaults)...');
+async function step5_bidding(page) {
+  console.log('\n[5/10] Bidding page (accepting defaults)...');
   await dismissDraftIfNeeded(page);
   await screenshot(page, '04-bidding');
 
@@ -374,8 +412,8 @@ async function step4_bidding(page) {
   await screenshot(page, '04b-after-bidding');
 }
 
-async function step5_campaignSettings(page) {
-  console.log('\n[5/9] Campaign settings (location targeting)...');
+async function step6_campaignSettings(page) {
+  console.log('\n[6/10] Campaign settings (location targeting)...');
   await dismissDraftIfNeeded(page);
   await screenshot(page, '05-settings');
 
@@ -456,8 +494,8 @@ async function step5_campaignSettings(page) {
   await clickNext(page, 'Next (campaign settings)');
 }
 
-async function step6_aiMaxAndKeywordGen(page) {
-  console.log('\n[6/9] AI Max + Keyword generation (skipping both)...');
+async function step7_aiMaxAndKeywordGen(page) {
+  console.log('\n[7/10] AI Max + Keyword generation (skipping both)...');
   await dismissDraftIfNeeded(page);
 
   // AI Max page — just screenshot and click Next
@@ -481,8 +519,8 @@ async function step6_aiMaxAndKeywordGen(page) {
   await clickNext(page, 'Next (keyword generation)');
 }
 
-async function step7_keywordsAndAds(page) {
-  console.log('\n[7/9] Keywords and ads (main content entry)...');
+async function step8_keywordsAndAds(page) {
+  console.log('\n[8/10] Keywords and ads (main content entry)...');
   await dismissDraftIfNeeded(page);
   await screenshot(page, '07-keywords-start');
   await dumpFormFields(page);
@@ -567,8 +605,8 @@ async function step7_keywordsAndAds(page) {
   await clickNext(page, 'Next (keywords and ads)');
 }
 
-async function step8_budget(page) {
-  console.log('\n[8/9] Setting budget...');
+async function step9_budget(page) {
+  console.log('\n[9/10] Setting budget...');
   await dismissDraftIfNeeded(page);
   await screenshot(page, '08-budget-start');
   await dumpFormFields(page);
@@ -638,8 +676,8 @@ async function step8_budget(page) {
   await clickNext(page, 'Next (budget)');
 }
 
-async function step9_review(page) {
-  console.log('\n[9/9] Review page...');
+async function step10_review(page) {
+  console.log('\n[10/10] Review page...');
   await dismissDraftIfNeeded(page);
   await screenshot(page, '09-review');
 
@@ -719,15 +757,16 @@ Edit the CAMPAIGN object at the top of create-campaign.js to configure:
     // Pre-wizard pages
     await step1_navigate(page);
     await step2_selectGoal(page);
-    await step3_typeAndName(page);
+    await step3_selectCampaignType(page);
+    await step4_campaignName(page);
 
     // Left-nav wizard steps
-    await step4_bidding(page);
-    await step5_campaignSettings(page);
-    await step6_aiMaxAndKeywordGen(page);
-    await step7_keywordsAndAds(page);
-    await step8_budget(page);
-    await step9_review(page);
+    await step5_bidding(page);
+    await step6_campaignSettings(page);
+    await step7_aiMaxAndKeywordGen(page);
+    await step8_keywordsAndAds(page);
+    await step9_budget(page);
+    await step10_review(page);
   } catch (err) {
     console.error('\nError during campaign creation:', err.message);
     await screenshot(page, 'error').catch(() => {});
