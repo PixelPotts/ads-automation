@@ -16,46 +16,61 @@ function humanDelay() {
 }
 
 // ---------------------------------------------------------------------------
-// Campaign configuration — edit these before running
+// Campaign configuration — load from --config file or use defaults
 // ---------------------------------------------------------------------------
-const CAMPAIGN = {
-  name: 'Phoenix Drainage - Search',
-  dailyBudget: '20',  // dollars per day
-  targetLocation: 'Phoenix',
-  keywords: [
-    'french drain installation',
-    'french drain installation near me',
-    'french drain contractor',
-    'yard drainage solutions',
-    'drainage contractor near me',
-    'french drain cost',
-    'yard drainage contractor',
-    'backyard drainage solutions',
-    'standing water yard fix',
-    'channel drain driveway',
-    'trench drain installation',
-    'drainage contractor phoenix',
-    'french drain installation phoenix',
-    'pool deck drainage',
-    'landscape drainage solutions',
-  ],
-  // Ad copy
-  headlines: [
-    'French Drain Installation',
-    'Phoenix Drainage Experts',
-    'Free Estimates Available',
-    'Stop Yard Flooding Today',
-    'Licensed & Insured',
-    'Same-Week Service',
-    'Monsoon-Ready Drains',
-    'Yard Drainage Solutions',
-  ],
-  descriptions: [
-    'Expert French drain installation in Phoenix. Free estimates, same-week service. Licensed & insured.',
-    'Stop standing water & protect your foundation. Professional drainage systems built to last. Call today.',
-  ],
-  finalUrl: 'file:///mnt/1tb-ssd/random/ads-automation/site/index.html', // replace with real URL
-};
+function loadCampaignConfig() {
+  const configIdx = process.argv.indexOf('--config');
+  if (configIdx !== -1 && process.argv[configIdx + 1]) {
+    const configPath = path.resolve(process.argv[configIdx + 1]);
+    if (!fs.existsSync(configPath)) {
+      console.error(`Config file not found: ${configPath}`);
+      process.exit(1);
+    }
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    console.log(`Loaded config: ${configPath}`);
+    return config;
+  }
+  // Default config (french drain)
+  return {
+    name: 'Phoenix Drainage - Search',
+    dailyBudget: '20',
+    targetLocation: 'Phoenix',
+    keywords: [
+      'french drain installation',
+      'french drain installation near me',
+      'french drain contractor',
+      'yard drainage solutions',
+      'drainage contractor near me',
+      'french drain cost',
+      'yard drainage contractor',
+      'backyard drainage solutions',
+      'standing water yard fix',
+      'channel drain driveway',
+      'trench drain installation',
+      'drainage contractor phoenix',
+      'french drain installation phoenix',
+      'pool deck drainage',
+      'landscape drainage solutions',
+    ],
+    headlines: [
+      'French Drain Installation',
+      'Phoenix Drainage Experts',
+      'Free Estimates Available',
+      'Stop Yard Flooding Today',
+      'Licensed & Insured',
+      'Same-Week Service',
+      'Monsoon-Ready Drains',
+      'Yard Drainage Solutions',
+    ],
+    descriptions: [
+      'Expert French drain installation in Phoenix. Free estimates, same-week service. Licensed & insured.',
+      'Stop standing water & protect your foundation. Professional drainage systems built to last. Call today.',
+    ],
+    finalUrl: 'file:///mnt/1tb-ssd/random/french-drain-install/index.html',
+  };
+}
+
+const CAMPAIGN = loadCampaignConfig();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1022,16 +1037,19 @@ Google Ads Campaign Creator
 ===========================
 
 Usage:
-  node create-campaign.js           Create campaign (interactive)
-  node create-campaign.js --test    Create campaign and auto-close (no publish)
-  node create-campaign.js --dry-run Show config without launching browser
+  node create-campaign.js                              Create campaign (interactive, default config)
+  node create-campaign.js --config campaigns/xyz.json  Load campaign config from JSON file
+  node create-campaign.js --test                       Auto-close after review (no publish)
+  node create-campaign.js --dry-run                    Show config without launching browser
 
-Edit the CAMPAIGN object at the top of create-campaign.js to configure:
-  - Campaign name, daily budget
-  - Target location
-  - Keywords list
-  - Ad headlines & descriptions
-  - Landing page URL
+Available configs:
+  campaigns/french-drain.json
+  campaigns/mobile-detailing.json
+  campaigns/pressure-washing.json
+  campaigns/junk-removal.json
+
+Example:
+  node create-campaign.js --config campaigns/french-drain.json --test
 `);
     process.exit(0);
   }
