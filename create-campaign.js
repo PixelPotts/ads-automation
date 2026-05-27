@@ -159,56 +159,65 @@ async function dismissDraftIfNeeded(page) {
 
 // Click "Next" button in the wizard — used by every wizard step
 async function clickNext(page, label) {
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  // Scroll Next button into view first
+  await page.evaluate(() => {
+    const btns = document.querySelectorAll('material-button, button');
+    for (const btn of btns) {
+      if (btn.textContent.trim() === 'Next' && btn.offsetWidth > 0) {
+        btn.scrollIntoView({ block: 'center' });
+        return;
+      }
+    }
+    window.scrollTo(0, document.body.scrollHeight);
+  });
   await page.waitForTimeout(800);
 
-  // Try standard Next button selectors
-  let clicked = await waitAndClick(page, [
-    'material-button:has-text("Next")',
-    'button:has-text("Next")',
-  ], label || 'Next button', 10000);
+  let clicked = false;
 
-  // Fallback: try the forward arrow/chevron at bottom right (Google Ads uses this)
-  if (!clicked) {
-    clicked = await page.evaluate(() => {
-      const els = document.querySelectorAll('button, [role="button"], material-button, a, [class*="nav"]');
-      for (const el of els) {
-        const rect = el.getBoundingClientRect();
-        const text = el.textContent.trim();
-        // Bottom-right area, navigation element
-        if (rect.right > window.innerWidth - 150 && rect.bottom > window.innerHeight - 100 &&
-            el.offsetHeight > 0 && el.offsetHeight < 80 &&
-            (text === '>' || text === 'arrow_forward' || text === 'chevron_right' ||
-             text === 'navigate_next' || text === '' || text.length <= 2)) {
-          el.click();
-          return 'arrow at x=' + Math.round(rect.left) + ' y=' + Math.round(rect.top);
+  // Method 1: Use Playwright's page.click() directly — handles Material Design best
+  try {
+    await page.click('material-button:has-text("Next")', { timeout: 5000 });
+    console.log(`  Clicked: ${label} (page.click material-button)`);
+    clicked = true;
+  } catch (e) {
+    // Method 2: Try standard button
+    try {
+      await page.click('button:has-text("Next")', { timeout: 3000 });
+      console.log(`  Clicked: ${label} (page.click button)`);
+      clicked = true;
+    } catch (e2) {
+      // Method 3: JS evaluate — click the material-button ancestor, not the text span
+      clicked = await page.evaluate(() => {
+        // Walk all elements, find "Next" text, then click the nearest material-button ancestor
+        const allEls = document.querySelectorAll('*');
+        for (const el of allEls) {
+          if (el.textContent.trim() === 'Next' && el.offsetHeight > 0 && el.offsetHeight < 60) {
+            // Find the clickable ancestor (material-button or button)
+            let target = el;
+            for (let p = el; p && p !== document.body; p = p.parentElement) {
+              if (p.tagName === 'MATERIAL-BUTTON' || p.tagName === 'BUTTON' ||
+                  p.getAttribute('role') === 'button') {
+                target = p;
+                break;
+              }
+            }
+            target.scrollIntoView({ block: 'center' });
+            target.click();
+            return true;
+          }
         }
-      }
-      return null;
-    });
-    if (clicked) console.log(`  Clicked: ${label} (${clicked})`);
-  }
-
-  // Last fallback: try clicking a material-button anywhere on the page with "Next" text
-  if (!clicked) {
-    clicked = await page.evaluate(() => {
-      const allEls = document.querySelectorAll('*');
-      for (const el of allEls) {
-        if (el.textContent.trim() === 'Next' && el.offsetHeight > 0 && el.offsetHeight < 60) {
-          el.click();
-          const rect = el.getBoundingClientRect();
-          return 'text Next at y=' + Math.round(rect.top);
-        }
-      }
-      return null;
-    });
-    if (clicked) console.log(`  Clicked: ${label} (${clicked})`);
+        return false;
+      });
+      if (clicked) console.log(`  Clicked: ${label} (JS ancestor click)`);
+    }
   }
 
   if (clicked) {
     await page.waitForTimeout(humanDelay());
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(1500);
+  } else {
+    console.log(`  WARNING: ${label} — Next button not found!`);
   }
   return clicked;
 }
