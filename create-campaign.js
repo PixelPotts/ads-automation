@@ -161,10 +161,34 @@ async function dismissDraftIfNeeded(page) {
 async function clickNext(page, label) {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(800);
-  const clicked = await waitAndClick(page, [
-    'button:has-text("Next")',
+
+  // Try standard Next button selectors
+  let clicked = await waitAndClick(page, [
     'material-button:has-text("Next")',
-  ], label || 'Next button', 15000);
+    'button:has-text("Next")',
+  ], label || 'Next button', 10000);
+
+  // Fallback: try the forward arrow/chevron button at bottom right
+  if (!clicked) {
+    clicked = await page.evaluate(() => {
+      // Look for a clickable element at bottom-right that's a navigation arrow
+      const els = document.querySelectorAll('button, [role="button"], material-button, a');
+      for (const el of els) {
+        const rect = el.getBoundingClientRect();
+        const text = el.textContent.trim();
+        // Bottom-right area, small element, arrow-like text
+        if (rect.right > window.innerWidth - 100 && rect.bottom > window.innerHeight - 80 &&
+            (text === '>' || text === 'arrow_forward' || text === 'chevron_right' ||
+             text === 'navigate_next' || el.querySelector('[class*="arrow"], [class*="forward"], [class*="next"]'))) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    });
+    if (clicked) console.log(`  Clicked: ${label} (forward arrow fallback)`);
+  }
+
   if (clicked) {
     await page.waitForTimeout(humanDelay());
     await page.waitForLoadState('networkidle').catch(() => {});
@@ -413,84 +437,101 @@ async function step5_bidding(page) {
 }
 
 async function step6_campaignSettings(page) {
-  console.log('\n[6/10] Campaign settings (location targeting)...');
+  console.log('\n[6/10] Campaign settings (location + EU political ads)...');
   await dismissDraftIfNeeded(page);
-  await screenshot(page, '05-settings');
+  await screenshot(page, '06-settings');
 
-  // Dump form fields to understand the layout
-  await dumpFormFields(page);
-
-  // Look for location input and set to Phoenix
-  // The location section usually has a text input for searching locations
-  const locationSet = await page.evaluate((targetLoc) => {
-    const inputs = document.querySelectorAll('input');
-    for (const inp of inputs) {
-      const label = (inp.getAttribute('aria-label') || '').toLowerCase();
-      const placeholder = (inp.placeholder || '').toLowerCase();
-      if (label.includes('location') || label.includes('target') ||
-          placeholder.includes('location') || placeholder.includes('city') ||
-          placeholder.includes('enter a location')) {
-        inp.focus();
-        inp.click();
-        return { found: true, label: inp.getAttribute('aria-label'), placeholder: inp.placeholder };
+  // --- LOCATION TARGETING ---
+  // Click "Enter another location" radio button
+  const locRadioClicked = await page.evaluate(() => {
+    const labels = document.querySelectorAll('label, span, div');
+    for (const el of labels) {
+      if (el.textContent.trim() === 'Enter another location' && el.offsetHeight > 0) {
+        // Click the radio button or the label
+        const radio = el.closest('label')?.querySelector('input[type="radio"]') ||
+                      el.parentElement?.querySelector('input[type="radio"]');
+        if (radio) { radio.click(); return 'clicked radio'; }
+        el.click();
+        return 'clicked label';
       }
     }
-    return { found: false };
-  }, CAMPAIGN.targetLocation);
+    return null;
+  });
+  console.log('  Enter another location:', locRadioClicked || 'NOT FOUND');
 
-  if (locationSet.found) {
-    console.log(`  Found location field: "${locationSet.label || locationSet.placeholder}"`);
-    // Type the location
-    const locInput = await page.$(`input[aria-label*="location" i], input[placeholder*="location" i], input[aria-label*="target" i]`);
+  if (locRadioClicked) {
+    await page.waitForTimeout(1500);
+
+    // Now a search input should appear — find it
+    const locInput = await page.waitForSelector(
+      'input[placeholder*="location" i], input[aria-label*="location" i], input[placeholder*="Search" i]',
+      { timeout: 5000 }
+    ).catch(() => null);
+
     if (locInput) {
-      await locInput.fill('');
+      await locInput.click();
       await page.keyboard.type(CAMPAIGN.targetLocation, { delay: 80 });
-      await page.waitForTimeout(2000); // wait for suggestions
+      console.log(`  Typed location: ${CAMPAIGN.targetLocation}`);
+      await page.waitForTimeout(2500); // wait for suggestions
 
-      // Click the suggestion that matches Phoenix, Arizona
-      const suggestionClicked = await page.evaluate((loc) => {
-        // Look for suggestion dropdown items
-        const items = document.querySelectorAll('[role="option"], [role="listbox"] *, li, .suggestion');
+      // Click the Phoenix suggestion
+      const suggClicked = await page.evaluate((loc) => {
+        const items = document.querySelectorAll('[role="option"], [role="listbox"] *, li');
         for (const item of items) {
           if (item.textContent.includes(loc) && item.offsetHeight > 0) {
             item.click();
-            return item.textContent.trim().substring(0, 60);
-          }
-        }
-        // Try finding "Include" buttons (like in keyword planner)
-        const btns = document.querySelectorAll('button, [role="button"]');
-        for (const btn of btns) {
-          if (btn.textContent.trim() === 'Include' && btn.offsetHeight > 0) {
-            btn.click();
-            return 'clicked Include';
+            return item.textContent.trim().substring(0, 80);
           }
         }
         return null;
       }, CAMPAIGN.targetLocation);
-      console.log(`  Location suggestion: ${suggestionClicked || 'no suggestion found'}`);
-    }
-  } else {
-    console.log('  No location input found on this page — location may be elsewhere.');
-    // Try to find any location-related section and expand it
-    const expanded = await page.evaluate(() => {
-      const els = document.querySelectorAll('*');
-      for (const el of els) {
-        if (el.textContent.trim() === 'Locations' && el.offsetHeight > 0 && el.offsetHeight < 40) {
-          el.click();
-          return true;
-        }
+      console.log(`  Location suggestion: ${suggClicked || 'no suggestion — trying Target button'}`);
+
+      // If no suggestion dropdown, try Target/Include button
+      if (!suggClicked) {
+        await page.waitForTimeout(1000);
+        await page.evaluate(() => {
+          const btns = document.querySelectorAll('button, [role="button"]');
+          for (const btn of btns) {
+            const t = btn.textContent.trim();
+            if ((t === 'Target' || t === 'Include') && btn.offsetHeight > 0) {
+              btn.click();
+              return true;
+            }
+          }
+        });
       }
-      return false;
-    });
-    if (expanded) {
-      console.log('  Expanded Locations section — retrying...');
-      await page.waitForTimeout(1500);
+    } else {
+      console.log('  Location search input not found after clicking radio.');
+      // Try dumping what appeared
       await dumpFormFields(page);
     }
   }
 
   await page.waitForTimeout(humanDelay());
-  await screenshot(page, '05b-settings-done');
+
+  // --- EU POLITICAL ADS ---
+  // Select "No, this campaign doesn't have EU political ads"
+  const euClicked = await page.evaluate(() => {
+    const labels = document.querySelectorAll('label, span, div');
+    for (const el of labels) {
+      const t = el.textContent.trim();
+      if (t.includes("doesn't have EU political ads") && el.offsetHeight > 0) {
+        const radio = el.closest('label')?.querySelector('input[type="radio"]') ||
+                      el.parentElement?.querySelector('input[type="radio"]');
+        if (radio) { radio.click(); return 'clicked radio'; }
+        el.click();
+        return 'clicked label';
+      }
+    }
+    return null;
+  });
+  console.log('  EU political ads (No):', euClicked || 'NOT FOUND');
+
+  await page.waitForTimeout(humanDelay());
+  await screenshot(page, '06b-settings-done');
+
+  // Scroll and click Next
   await clickNext(page, 'Next (campaign settings)');
 }
 
