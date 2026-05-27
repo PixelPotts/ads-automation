@@ -10,6 +10,7 @@ const ADS_URL = 'https://ads.google.com';
 const KW_PLANNER_URL = 'https://ads.google.com/aw/keywordplanner/home';
 const BATCH_SIZE = 10;
 const ACCOUNT_ID = '7752'; // last 4 digits of the Google Ads account to auto-select
+const TARGET_LOCATION = 'Phoenix'; // location to target (set to null for US-wide)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -230,6 +231,125 @@ async function navigateToForecasts(page) {
   }
 }
 
+async function setLocation(page) {
+  if (!TARGET_LOCATION) return;
+
+  console.log(`Setting location to "${TARGET_LOCATION}"...`);
+  ensureDir(OUTPUT_DIR);
+
+  // Click the location pill to open the Location modal
+  const locationPill = await waitForSelector(page, [
+    'text=United States',
+    'text=All locations',
+  ], 10000);
+
+  if (!locationPill) {
+    console.log('WARNING: Could not find location pill — using default location.');
+    await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-no-location.png'), fullPage: true });
+    return;
+  }
+
+  await locationPill.el.click();
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-location-dialog.png'), fullPage: true });
+  console.log('Location dialog opened.');
+
+  // Remove existing "United States" by clicking its X button via JS (bypasses overlay intercept)
+  const removed = await page.evaluate(() => {
+    // The X buttons next to locations in the dialog are the ⊗ icons
+    const closeButtons = document.querySelectorAll('.modal.visible material-icon, .modal.visible [aria-label="Remove"]');
+    let clicked = 0;
+    for (const btn of closeButtons) {
+      const text = btn.closest('div,li,tr')?.textContent || '';
+      if (text.includes('United States') || text.includes('country')) {
+        btn.click();
+        clicked++;
+      }
+    }
+    // Fallback: look for any close/remove icon near "United States" text
+    if (clicked === 0) {
+      const allIcons = document.querySelectorAll('.pane.modal.visible i, .pane.modal.visible material-icon');
+      for (const icon of allIcons) {
+        if (icon.textContent.trim() === 'close' || icon.textContent.trim() === 'cancel') {
+          icon.click();
+          clicked++;
+          break;
+        }
+      }
+    }
+    return clicked;
+  });
+  console.log(`Removed ${removed} existing location(s).`);
+  await page.waitForTimeout(1000);
+
+  // Debug: dump modal HTML to find the input
+  const modalDebug = await page.evaluate(() => {
+    const modal = document.querySelector('.pane.modal.visible') || document.querySelector('.modal.visible') || document.querySelector('[class*="modal"][class*="visible"]');
+    if (modal) return 'MODAL FOUND: ' + modal.className + '\n' + modal.innerHTML.substring(0, 3000);
+    // Fallback: find all inputs on page
+    const inputs = document.querySelectorAll('input');
+    return 'NO MODAL. Inputs on page:\n' + Array.from(inputs).map(i => `  ${i.tagName} placeholder="${i.placeholder}" aria-label="${i.getAttribute('aria-label')}" class="${i.className}"`).join('\n');
+  });
+  fs.writeFileSync(path.join(OUTPUT_DIR, 'debug-modal.txt'), modalDebug);
+  console.log('Modal debug written to output/debug-modal.txt');
+
+  // Focus the combobox via JS, then type character by character to trigger autocomplete
+  await page.evaluate(() => {
+    const input = document.querySelector('.pane.modal.visible input[role="combobox"]')
+      || document.querySelector('location-suggest-input input');
+    if (input) { input.focus(); input.value = ''; }
+  });
+  await page.keyboard.type(TARGET_LOCATION, { delay: 100 });
+  console.log(`Typed "${TARGET_LOCATION}" in location input.`);
+  await page.waitForTimeout(2500);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-location-suggestions.png'), fullPage: true });
+
+  // Click "Include" link in the suggestion row (it's the action to add the location)
+  const included = await page.evaluate((target) => {
+    // Look for the "Include" link/button in the suggestions dropdown
+    const items = document.querySelectorAll('material-select-dropdown-item, [role="option"], .suggestion-item, li');
+    for (const item of items) {
+      if (item.textContent.includes(target) && item.textContent.includes('Include')) {
+        const includeLink = item.querySelector('a, button, [role="button"], span');
+        // Click the whole item or the Include link
+        const clickTarget = Array.from(item.querySelectorAll('*')).find(el => el.textContent.trim() === 'Include') || item;
+        clickTarget.click();
+        return 'clicked Include';
+      }
+      if (item.textContent.includes(target)) {
+        item.click();
+        return 'clicked row';
+      }
+    }
+    return 'not found';
+  }, TARGET_LOCATION);
+  console.log('Suggestion click result:', included);
+  await page.waitForTimeout(2000);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-location-selected.png'), fullPage: true });
+
+  // Click Save button inside the modal
+  const saveBtn = page.locator('.pane.modal.visible button:has-text("Save"), .pane.modal.visible material-button:has-text("Save")').first();
+  try {
+    await saveBtn.click({ force: true, timeout: 10000 });
+    console.log('Clicked Save on location dialog.');
+  } catch (e) {
+    // Fallback: JS click
+    await page.evaluate(() => {
+      const btns = document.querySelectorAll('.pane.modal.visible button, .pane.modal.visible material-button');
+      for (const btn of btns) {
+        if (btn.textContent.trim().includes('Save')) { btn.click(); return; }
+      }
+    });
+    console.log('Clicked Save via JS fallback.');
+  }
+  await page.waitForTimeout(3000);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'debug-location-set.png'), fullPage: true });
+  console.log('Location setting complete.');
+}
+
 async function enterKeywords(page, keywords) {
   const kwText = keywords.join('\n');
   console.log(`Entering ${keywords.length} keywords...`);
@@ -400,6 +520,7 @@ async function doScrape(keywords) {
 
   const allResults = [];
   const batches = chunk(keywords, BATCH_SIZE);
+  let locationSet = false;
 
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
@@ -407,6 +528,15 @@ async function doScrape(keywords) {
 
     await navigateToForecasts(page);
     await enterKeywords(page, batch);
+
+    // Set location once after first batch loads results
+    if (!locationSet && TARGET_LOCATION) {
+      await setLocation(page);
+      locationSet = true;
+      // Wait for results to refresh after location change
+      await page.waitForTimeout(5000);
+    }
+
     const rows = await scrapeResults(page);
     allResults.push(...rows);
 
