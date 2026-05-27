@@ -457,119 +457,167 @@ async function step6_campaignSettings(page) {
   await dismissDraftIfNeeded(page);
   await screenshot(page, '06-settings');
 
-  // --- LOCATION TARGETING ---
-  // Click "Enter another location" radio button
-  const locRadioClicked = await page.evaluate(() => {
-    const labels = document.querySelectorAll('label, span, div');
-    for (const el of labels) {
-      if (el.textContent.trim() === 'Enter another location' && el.offsetHeight > 0) {
-        // Click the radio button or the label
-        const radio = el.closest('label')?.querySelector('input[type="radio"]') ||
-                      el.parentElement?.querySelector('input[type="radio"]');
-        if (radio) { radio.click(); return 'clicked radio'; }
+  // --- LOCATION: click "Enter another location" radio ---
+  // Use page.click on the text to trigger the Material radio
+  await page.evaluate(() => {
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      if (el.childNodes.length <= 3 && el.textContent.trim() === 'Enter another location' && el.offsetHeight > 0) {
+        el.scrollIntoView({ block: 'center' });
         el.click();
-        return 'clicked label';
+        return;
       }
     }
-    return null;
   });
-  console.log('  Enter another location:', locRadioClicked || 'NOT FOUND');
+  await page.waitForTimeout(2000);
 
-  if (locRadioClicked) {
-    await page.waitForTimeout(2000);
-
-    // The input has placeholder "Enter a location to include or exclude"
-    const locInput = await page.waitForSelector(
-      'input[placeholder*="include or exclude" i], input[placeholder*="location" i], input[aria-label*="location" i]',
-      { timeout: 8000 }
-    ).catch(() => null);
-
-    if (locInput) {
-      await locInput.click();
-      await page.keyboard.type(CAMPAIGN.targetLocation, { delay: 80 });
-      console.log(`  Typed location: ${CAMPAIGN.targetLocation}`);
-      await page.waitForTimeout(2500); // wait for suggestions
-
-      // Click the Phoenix suggestion from the dropdown
-      const suggClicked = await page.evaluate((loc) => {
-        const items = document.querySelectorAll('[role="option"], [role="listbox"] *, li, [class*="suggestion"]');
-        for (const item of items) {
-          const t = item.textContent;
-          if (t.includes(loc) && item.offsetHeight > 0 && item.offsetHeight < 100) {
-            item.click();
-            return t.trim().substring(0, 80);
-          }
+  // --- LOCATION: type Phoenix in the search input ---
+  // Google Ads Material input: the visible text "Enter a location to include or exclude" is a label,
+  // the actual <input> has no placeholder. Find it by proximity to the label text.
+  const locTyped = await page.evaluate((targetLoc) => {
+    // Find the label/span with the placeholder text
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      const t = el.textContent.trim();
+      if (t === 'Enter a location to include or exclude' && el.offsetHeight > 0) {
+        // The input is typically a sibling or within the same parent container
+        const container = el.closest('div') || el.parentElement;
+        const input = container?.querySelector('input') ||
+                      container?.parentElement?.querySelector('input') ||
+                      container?.parentElement?.parentElement?.querySelector('input');
+        if (input) {
+          input.scrollIntoView({ block: 'center' });
+          input.focus();
+          input.click();
+          return { found: true, tag: input.tagName };
         }
-        return null;
-      }, CAMPAIGN.targetLocation);
-      console.log(`  Location suggestion: ${suggClicked || 'no suggestion — trying Target button'}`);
-
-      // If no suggestion dropdown, try Target/Include button
-      if (!suggClicked) {
-        await page.waitForTimeout(1000);
-        const targetClicked = await page.evaluate(() => {
-          const btns = document.querySelectorAll('button, [role="button"], material-button');
-          for (const btn of btns) {
-            const t = btn.textContent.trim();
-            if ((t === 'Target' || t === 'Include') && btn.offsetHeight > 0) {
-              btn.click();
-              return t;
-            }
-          }
-          return null;
-        });
-        if (targetClicked) console.log(`  Clicked: ${targetClicked} button`);
       }
-    } else {
-      console.log('  Location search input not found after clicking radio.');
-      await dumpFormFields(page);
     }
+    // Fallback: find any text input in the Locations section
+    const locSection = Array.from(document.querySelectorAll('*')).find(
+      el => el.textContent.trim().startsWith('Locations') && el.offsetHeight > 20 && el.offsetHeight < 60
+    );
+    if (locSection) {
+      const parent = locSection.closest('section') || locSection.parentElement?.parentElement;
+      const input = parent?.querySelector('input[type="text"], input:not([type])');
+      if (input) {
+        input.scrollIntoView({ block: 'center' });
+        input.focus();
+        input.click();
+        return { found: true, tag: 'fallback-input' };
+      }
+    }
+    return { found: false };
+  }, CAMPAIGN.targetLocation);
+
+  if (locTyped.found) {
+    await page.waitForTimeout(500);
+    await page.keyboard.type(CAMPAIGN.targetLocation, { delay: 80 });
+    console.log(`  Typed location: ${CAMPAIGN.targetLocation}`);
+    await page.waitForTimeout(2500);
+
+    // Click Target button or suggestion
+    const targeted = await page.evaluate((loc) => {
+      // Look for suggestion items or Target buttons
+      const all = document.querySelectorAll('[role="option"], li, [class*="suggestion"], button, [role="button"]');
+      for (const el of all) {
+        const t = el.textContent.trim();
+        if ((t.includes(loc) || t === 'Target') && el.offsetHeight > 0 && el.offsetHeight < 100) {
+          el.scrollIntoView({ block: 'center' });
+          el.click();
+          return t.substring(0, 80);
+        }
+      }
+      return null;
+    }, CAMPAIGN.targetLocation);
+    console.log(`  Location target: ${targeted || 'no suggestion/button found'}`);
+  } else {
+    console.log('  WARNING: Location input not found, using default (All countries).');
   }
 
   await page.waitForTimeout(humanDelay());
 
   // --- EU POLITICAL ADS ---
-  // Scroll down to see EU political ads section
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(1000);
-
-  // Select "No, this campaign doesn't have EU political ads"
-  // Must be precise: find the SPECIFIC label for "No" (not a parent that contains both Yes and No)
-  const euClicked = await page.evaluate(() => {
-    // Strategy: find all radio inputs, check the associated label text
-    const radios = document.querySelectorAll('input[type="radio"]');
-    for (const radio of radios) {
-      // Walk up to find the label text
-      const label = radio.closest('label') || radio.parentElement;
-      if (label) {
-        const labelText = label.textContent.trim();
-        if (labelText.includes("doesn't have EU political") || labelText.includes("doesn\u2019t have EU political")) {
-          radio.click();
-          return 'clicked No radio: ' + labelText.substring(0, 60);
-        }
+  // First scroll to the EU political ads section
+  await page.evaluate(() => {
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      if (el.textContent.trim() === 'EU political ads' && el.offsetHeight > 0 && el.offsetHeight < 60) {
+        el.scrollIntoView({ block: 'center' });
+        break;
       }
     }
-    // Fallback: find the text node and click its nearest radio sibling
-    const spans = document.querySelectorAll('span');
-    for (const span of spans) {
-      const t = span.textContent.trim();
-      if (t.startsWith('No') && t.includes('EU political') && span.offsetHeight > 0) {
-        const parent = span.closest('[role="radiogroup"]') || span.parentElement;
-        const radio = parent?.querySelector('input[type="radio"]');
-        if (radio) { radio.click(); return 'clicked via span: ' + t.substring(0, 60); }
-        span.click();
-        return 'clicked span: ' + t.substring(0, 60);
+  });
+  await page.waitForTimeout(1500);
+
+  // Now click the "No" option
+  const euClicked = await page.evaluate(() => {
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      const t = el.textContent.trim();
+      // Match the specific "No" label text (not parent containers)
+      if (t.startsWith('No,') && t.includes('EU political') && el.offsetHeight > 0 && el.offsetHeight < 50) {
+        el.scrollIntoView({ block: 'center' });
+        el.click();
+        return 'clicked: ' + t.substring(0, 60);
+      }
+    }
+    // Fallback: try the second radio in the EU political ads section
+    const section = Array.from(document.querySelectorAll('*')).find(
+      e => e.textContent.trim() === 'EU political ads' && e.offsetHeight > 0
+    );
+    if (section) {
+      const parent = section.closest('section') || section.parentElement?.parentElement?.parentElement;
+      const radios = parent?.querySelectorAll('input[type="radio"]');
+      if (radios && radios.length >= 2) {
+        radios[1].scrollIntoView({ block: 'center' });
+        radios[1].click();
+        return 'clicked 2nd radio in EU section';
       }
     }
     return null;
   });
-  console.log('  EU political ads (No):', euClicked || 'NOT FOUND');
+  console.log('  EU political ads (No):', euClicked || 'NOT FOUND — will try to proceed anyway');
 
   await page.waitForTimeout(humanDelay());
   await screenshot(page, '06b-settings-done');
 
-  // Scroll and click Next
-  await clickNext(page, 'Next (campaign settings)');
+  // --- CLICK NEXT ---
+  // Scroll to very bottom and try to find the Next button
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1500);
+
+  // Try material-button first (what worked on Bidding page)
+  let nextClicked = await waitAndClick(page, [
+    'material-button:has-text("Next")',
+    'button:has-text("Next")',
+  ], 'Next (campaign settings)', 8000);
+
+  // Fallback: use page.evaluate to find and click the Next button element
+  if (!nextClicked) {
+    nextClicked = await page.evaluate(() => {
+      const btns = document.querySelectorAll('material-button, button, [role="button"]');
+      for (const btn of btns) {
+        const t = btn.textContent.trim();
+        if (t === 'Next' && btn.offsetWidth > 0) {
+          btn.scrollIntoView({ block: 'center' });
+          btn.click();
+          const rect = btn.getBoundingClientRect();
+          return 'JS click at y=' + Math.round(rect.top);
+        }
+      }
+      return null;
+    });
+    if (nextClicked) console.log(`  Clicked: Next (campaign settings) (${nextClicked})`);
+  }
+
+  if (nextClicked) {
+    await page.waitForTimeout(humanDelay());
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(1500);
+  } else {
+    console.log('  WARNING: Next button not found on Campaign settings!');
+  }
 }
 
 async function step7_aiMaxAndKeywordGen(page) {
