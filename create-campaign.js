@@ -186,29 +186,29 @@ async function clickNext(page, label) {
       console.log(`  Clicked: ${label} (page.click button)`);
       clicked = true;
     } catch (e2) {
-      // Method 3: JS evaluate — click the material-button ancestor, not the text span
+      // Method 3: JS evaluate with MouseEvent dispatch on material-button
       clicked = await page.evaluate(() => {
-        // Walk all elements, find "Next" text, then click the nearest material-button ancestor
-        const allEls = document.querySelectorAll('*');
-        for (const el of allEls) {
-          if (el.textContent.trim() === 'Next' && el.offsetHeight > 0 && el.offsetHeight < 60) {
-            // Find the clickable ancestor (material-button or button)
-            let target = el;
-            for (let p = el; p && p !== document.body; p = p.parentElement) {
-              if (p.tagName === 'MATERIAL-BUTTON' || p.tagName === 'BUTTON' ||
-                  p.getAttribute('role') === 'button') {
-                target = p;
-                break;
-              }
-            }
-            target.scrollIntoView({ block: 'center' });
-            target.click();
-            return true;
+        // Directly query material-button and button elements
+        const btns = document.querySelectorAll('material-button, button, [role="button"]');
+        for (const btn of btns) {
+          if (btn.textContent.trim() === 'Next' && btn.offsetWidth > 0) {
+            btn.scrollIntoView({ block: 'center' });
+            // Try native click first
+            btn.click();
+            // Also dispatch a proper MouseEvent (for Angular event handlers)
+            const rect = btn.getBoundingClientRect();
+            const evt = new MouseEvent('click', {
+              bubbles: true, cancelable: true, view: window,
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+            });
+            btn.dispatchEvent(evt);
+            return 'btn ' + btn.tagName + ' at y=' + Math.round(rect.top);
           }
         }
-        return false;
+        return null;
       });
-      if (clicked) console.log(`  Clicked: ${label} (JS ancestor click)`);
+      if (clicked) console.log(`  Clicked: ${label} (JS dispatch: ${clicked})`);
     }
   }
 
