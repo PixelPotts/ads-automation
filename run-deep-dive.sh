@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deep-dive: run 100 keywords per top pick, keep best 25, append to desktop file
-BASEDIR="/mnt/1tb-ssd/random/keyword-planner"
+BASEDIR="/mnt/1tb-ssd/random/ads-automation"
 LOG="$BASEDIR/output/deep-dive.log"
 DESKTOP="/home/potts/Desktop/keyword-results.txt"
 OUTDIR="$BASEDIR/output"

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run keyword planner in batches of 10, appending results to a log file
-LOG="/mnt/1tb-ssd/random/keyword-planner/output/batch-run.log"
-RESULTS="/mnt/1tb-ssd/random/keyword-planner/output/all-services.csv"
-mkdir -p /mnt/1tb-ssd/random/keyword-planner/output
+LOG="/mnt/1tb-ssd/random/ads-automation/output/batch-run.log"
+RESULTS="/mnt/1tb-ssd/random/ads-automation/output/all-services.csv"
+mkdir -p /mnt/1tb-ssd/random/ads-automation/output
 
 echo "=== Batch run started at $(date) ===" > "$LOG"
 echo "keyword,avg_monthly_searches,competition,cpc_low,cpc_high" > "$RESULTS"
@@ -19,9 +19,9 @@ for i in "${!KEYWORDS[@]}"; do
   echo "--- BATCH $BATCH_NUM/3 starting at $(date) ---" >> "$LOG"
 
   # Clean stale locks
-  rm -f /mnt/1tb-ssd/random/keyword-planner/chrome-profile/SingletonLock /mnt/1tb-ssd/random/keyword-planner/chrome-profile/SingletonCookie 2>/dev/null
+  rm -f /mnt/1tb-ssd/random/ads-automation/chrome-profile/SingletonLock /mnt/1tb-ssd/random/ads-automation/chrome-profile/SingletonCookie 2>/dev/null
 
-  OUTPUT=$(cd /mnt/1tb-ssd/random/keyword-planner && node planner.js --kw "${KEYWORDS[$i]}" 2>&1)
+  OUTPUT=$(cd /mnt/1tb-ssd/random/ads-automation && node planner.js --kw "${KEYWORDS[$i]}" 2>&1)
   EXIT_CODE=$?
 
   echo "$OUTPUT" >> "$LOG"

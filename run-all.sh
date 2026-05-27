@@ -1,8 +1,8 @@
 #!/bin/bash
-LOG="/mnt/1tb-ssd/random/keyword-planner/output/full-run.log"
-CSV="/mnt/1tb-ssd/random/keyword-planner/output/phoenix-all.csv"
+LOG="/mnt/1tb-ssd/random/ads-automation/output/full-run.log"
+CSV="/mnt/1tb-ssd/random/ads-automation/output/phoenix-all.csv"
 DESKTOP="/home/potts/Desktop/keyword-results.txt"
-mkdir -p /mnt/1tb-ssd/random/keyword-planner/output
+mkdir -p /mnt/1tb-ssd/random/ads-automation/output
 
 echo "=== Full run started at $(date) ===" > "$LOG"
 echo "keyword,avg_monthly_searches,competition,cpc_low,cpc_high" > "$CSV"
@@ -27,9 +27,9 @@ for i in "${!BATCHES[@]}"; do
   echo "" >> "$LOG"
   echo "--- BATCH $BATCH_NUM/$TOTAL starting at $(date) ---" >> "$LOG"
 
-  rm -f /mnt/1tb-ssd/random/keyword-planner/chrome-profile/SingletonLock /mnt/1tb-ssd/random/keyword-planner/chrome-profile/SingletonCookie 2>/dev/null
+  rm -f /mnt/1tb-ssd/random/ads-automation/chrome-profile/SingletonLock /mnt/1tb-ssd/random/ads-automation/chrome-profile/SingletonCookie 2>/dev/null
 
-  OUTPUT=$(cd /mnt/1tb-ssd/random/keyword-planner && node planner.js --kw "${BATCHES[$i]}" 2>&1)
+  OUTPUT=$(cd /mnt/1tb-ssd/random/ads-automation && node planner.js --kw "${BATCHES[$i]}" 2>&1)
   EXIT_CODE=$?
 
   echo "$OUTPUT" >> "$LOG"
@@ -104,7 +104,7 @@ echo "=== All $TOTAL batches complete at $(date) ===" >> "$LOG"
     fi
   done
   echo ""
-  echo "CSV: /mnt/1tb-ssd/random/keyword-planner/output/phoenix-all.csv"
+  echo "CSV: /mnt/1tb-ssd/random/ads-automation/output/phoenix-all.csv"
 } > "$DESKTOP"
 
 echo "DONE" >> "$LOG"

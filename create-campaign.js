@@ -54,7 +54,7 @@ const CAMPAIGN = {
     'Expert French drain installation in Phoenix. Free estimates, same-week service. Licensed & insured.',
     'Stop standing water & protect your foundation. Professional drainage systems built to last. Call today.',
   ],
-  finalUrl: 'file:///mnt/1tb-ssd/random/keyword-planner/site/index.html', // replace with real URL
+  finalUrl: 'file:///mnt/1tb-ssd/random/ads-automation/site/index.html', // replace with real URL
 };
 
 // ---------------------------------------------------------------------------
