@@ -694,89 +694,177 @@ async function step7_aiMaxAndKeywordGen(page) {
   await screenshot(page, '07c-after-keyword-gen');
 }
 
+// Helper: scroll element into view and click it
+async function scrollAndClick(page, el) {
+  await el.evaluate(e => e.scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(300);
+  await el.click({ force: true });
+}
+
 async function step8_keywordsAndAds(page) {
   console.log('\n[8/10] Keywords and ads (main content entry)...');
   await dismissDraftIfNeeded(page);
-  await screenshot(page, '07-keywords-start');
+  await screenshot(page, '08-keywords-start');
   await dumpFormFields(page);
 
-  // Enter keywords
+  // --- KEYWORDS ---
   const kwText = CAMPAIGN.keywords.join('\n');
-
-  // Try textarea first
   let kwEntered = false;
-  const kwInput = await page.$('textarea[aria-label*="keyword" i], textarea[aria-label*="Keyword" i]');
-  if (kwInput) {
-    await kwInput.click();
-    await kwInput.fill(kwText);
+
+  // Find the keywords textarea (has placeholder about "enter or paste keywords")
+  const kwTextarea = await page.$('textarea');
+  if (kwTextarea) {
+    await scrollAndClick(page, kwTextarea);
+    await kwTextarea.fill(kwText);
     kwEntered = true;
-    console.log(`  Entered ${CAMPAIGN.keywords.length} keywords (textarea).`);
-  }
-
-  // Try contenteditable div
-  if (!kwEntered) {
-    const editable = await page.$('div[contenteditable="true"]');
-    if (editable) {
-      await editable.click();
-      await page.keyboard.type(kwText, { delay: 15 });
-      kwEntered = true;
-      console.log(`  Typed ${CAMPAIGN.keywords.length} keywords (contenteditable).`);
-    }
-  }
-
-  // Try any generic textarea on the page
-  if (!kwEntered) {
-    const anyTA = await page.$('textarea');
-    if (anyTA) {
-      await anyTA.click();
-      await anyTA.fill(kwText);
-      kwEntered = true;
-      console.log(`  Entered ${CAMPAIGN.keywords.length} keywords (generic textarea).`);
-    }
+    console.log(`  Entered ${CAMPAIGN.keywords.length} keywords.`);
   }
 
   if (!kwEntered) {
-    console.log('  WARNING: No keyword input found!');
+    console.log('  WARNING: No keyword textarea found!');
   }
 
   await page.waitForTimeout(humanDelay());
 
-  // Final URL
-  const urlInput = await page.$('input[aria-label*="Final URL" i], input[aria-label*="final url" i], input[aria-label*="Landing page" i], input[aria-label*="landing page" i]');
-  if (urlInput) {
-    await urlInput.click();
-    await urlInput.fill(CAMPAIGN.finalUrl);
-    console.log(`  Final URL: ${CAMPAIGN.finalUrl}`);
+  // --- SCROLL DOWN to the Ads section ---
+  // The page has Keywords section at top, then Ads section below with URL/Headlines/Descriptions
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(2000);
+  await screenshot(page, '08b-ads-section');
+  await dumpFormFields(page);
+
+  // --- FINAL URL ---
+  // Find the Final URL input in the ads section (not the keyword suggestions one)
+  // The ads section Final URL has aria-label "Final URL" and is near headlines
+  const urlInputs = await page.$$('input[aria-label*="Final URL" i]');
+  let urlFilled = false;
+  for (const inp of urlInputs) {
+    const visible = await inp.isVisible().catch(() => false);
+    if (visible) {
+      await scrollAndClick(page, inp);
+      await inp.fill(CAMPAIGN.finalUrl);
+      urlFilled = true;
+      console.log(`  Final URL: ${CAMPAIGN.finalUrl}`);
+      break;
+    }
+  }
+  // Fallback: use evaluate to find by label text
+  if (!urlFilled) {
+    urlFilled = await page.evaluate((url) => {
+      const inputs = document.querySelectorAll('input');
+      for (const inp of inputs) {
+        const label = (inp.getAttribute('aria-label') || '').toLowerCase();
+        if (label.includes('final url') && !label.includes('mobile')) {
+          inp.scrollIntoView({ block: 'center' });
+          inp.focus();
+          inp.value = url;
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+      }
+      return false;
+    }, CAMPAIGN.finalUrl);
+    if (urlFilled) console.log(`  Final URL (JS): ${CAMPAIGN.finalUrl}`);
+  }
+  if (!urlFilled) console.log('  WARNING: Final URL field not found.');
+
+  await page.waitForTimeout(humanDelay());
+
+  // --- HEADLINES ---
+  // The headline inputs may not have "Headline" in aria-label. They're plain INPUT[text]
+  // grouped after the Final URL. Try multiple selectors.
+  let headlineInputs = await page.$$('input[aria-label*="Headline" i]');
+  if (headlineInputs.length === 0) {
+    // Fallback: find inputs between Final URL and Description sections via evaluate
+    headlineInputs = await page.$$eval('input[type="text"]', (inputs) => {
+      return inputs.filter(i => {
+        const label = i.getAttribute('aria-label') || '';
+        return !label.includes('Final URL') && !label.includes('Path') &&
+               !label.includes('parameter') && !label.includes('mobile') &&
+               !label.includes('Explain') && !label.includes('products') &&
+               i.offsetHeight > 0;
+      }).map(i => i); // can't return element handles from $$eval
+    });
+    // $$eval returns serialized data, not handles. Use a different approach.
+    headlineInputs = [];
+  }
+
+  // Better approach: use evaluate to fill headlines by finding text inputs near "Headline" labels
+  if (headlineInputs.length === 0) {
+    const filledCount = await page.evaluate((headlines) => {
+      let filled = 0;
+      const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+      const adInputs = [];
+      for (const inp of inputs) {
+        const label = (inp.getAttribute('aria-label') || '');
+        // Skip known non-headline inputs
+        if (label.includes('Final URL') || label.includes('Path') ||
+            label.includes('parameter') || label.includes('mobile') ||
+            label.includes('Explain') || label.includes('products') ||
+            label.includes('keyword') || label.includes('language')) continue;
+        if (inp.offsetHeight > 0 && inp.offsetWidth > 100) {
+          adInputs.push(inp);
+        }
+      }
+      // The first batch of text inputs after Final URL are headlines
+      for (let i = 0; i < Math.min(adInputs.length, headlines.length); i++) {
+        adInputs[i].scrollIntoView({ block: 'center' });
+        adInputs[i].focus();
+        adInputs[i].value = headlines[i];
+        adInputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+        adInputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+        filled++;
+      }
+      return filled;
+    }, CAMPAIGN.headlines);
+    if (filledCount > 0) console.log(`  Filled ${filledCount}/${CAMPAIGN.headlines.length} headlines (JS).`);
+    else console.log('  WARNING: No headline inputs found.');
   } else {
-    console.log('  Final URL field not found on this page.');
+    for (let i = 0; i < Math.min(headlineInputs.length, CAMPAIGN.headlines.length); i++) {
+      await scrollAndClick(page, headlineInputs[i]);
+      await headlineInputs[i].fill(CAMPAIGN.headlines[i]);
+      await page.waitForTimeout(400);
+    }
+    console.log(`  Filled ${Math.min(headlineInputs.length, CAMPAIGN.headlines.length)} headlines.`);
   }
 
   await page.waitForTimeout(humanDelay());
 
-  // Headlines
-  const headlineInputs = await page.$$('input[aria-label*="Headline" i], input[aria-label*="headline" i]');
-  const filledHeadlines = Math.min(headlineInputs.length, CAMPAIGN.headlines.length);
-  for (let i = 0; i < filledHeadlines; i++) {
-    await headlineInputs[i].click();
-    await headlineInputs[i].fill(CAMPAIGN.headlines[i]);
-    console.log(`  Headline ${i + 1}: ${CAMPAIGN.headlines[i]}`);
-    await page.waitForTimeout(400 + Math.floor(Math.random() * 600));
+  // --- DESCRIPTIONS ---
+  const descInputs = await page.$$('textarea[aria-label*="Description" i], input[aria-label*="Description" i]');
+  if (descInputs.length > 0) {
+    for (let i = 0; i < Math.min(descInputs.length, CAMPAIGN.descriptions.length); i++) {
+      await scrollAndClick(page, descInputs[i]);
+      await descInputs[i].fill(CAMPAIGN.descriptions[i]);
+      console.log(`  Description ${i + 1}: ${CAMPAIGN.descriptions[i].substring(0, 50)}...`);
+      await page.waitForTimeout(500);
+    }
+  } else {
+    // JS fallback for descriptions
+    const descFilled = await page.evaluate((descriptions) => {
+      const textareas = document.querySelectorAll('textarea');
+      let filled = 0;
+      for (const ta of textareas) {
+        const label = (ta.getAttribute('aria-label') || '').toLowerCase();
+        if (label.includes('description') && ta.offsetHeight > 0) {
+          ta.scrollIntoView({ block: 'center' });
+          ta.focus();
+          ta.value = descriptions[filled];
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          ta.dispatchEvent(new Event('change', { bubbles: true }));
+          filled++;
+          if (filled >= descriptions.length) break;
+        }
+      }
+      return filled;
+    }, CAMPAIGN.descriptions);
+    if (descFilled > 0) console.log(`  Filled ${descFilled} descriptions (JS).`);
+    else console.log('  WARNING: No description fields found.');
   }
-  if (filledHeadlines > 0) console.log(`  Filled ${filledHeadlines}/${CAMPAIGN.headlines.length} headlines.`);
-
-  // Descriptions
-  const descInputs = await page.$$('textarea[aria-label*="Description" i], textarea[aria-label*="description" i], input[aria-label*="Description" i]');
-  const filledDescs = Math.min(descInputs.length, CAMPAIGN.descriptions.length);
-  for (let i = 0; i < filledDescs; i++) {
-    await descInputs[i].click();
-    await descInputs[i].fill(CAMPAIGN.descriptions[i]);
-    console.log(`  Description ${i + 1}: ${CAMPAIGN.descriptions[i].substring(0, 50)}...`);
-    await page.waitForTimeout(400 + Math.floor(Math.random() * 600));
-  }
-  if (filledDescs > 0) console.log(`  Filled ${filledDescs}/${CAMPAIGN.descriptions.length} descriptions.`);
 
   await page.waitForTimeout(humanDelay());
-  await screenshot(page, '07-keywords-done');
+  await screenshot(page, '08c-keywords-done');
   await clickNext(page, 'Next (keywords and ads)');
 }
 
