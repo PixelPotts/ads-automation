@@ -652,24 +652,46 @@ async function step7_aiMaxAndKeywordGen(page) {
   await dismissDraftIfNeeded(page);
 
   // AI Max page — just screenshot and click Next
-  await screenshot(page, '06a-ai-max');
-  const heading1 = await page.evaluate(() => {
-    const h = document.querySelector('h1, h2');
-    return h ? h.textContent.trim() : '';
-  });
-  console.log('  Page heading:', heading1);
+  await screenshot(page, '07a-ai-max');
   await clickNext(page, 'Next (AI Max)');
 
-  // Keyword and asset generation page — just click Next
+  // Keyword and asset generation page — click "Skip" (not Next)
   await page.waitForTimeout(1000);
   await dismissDraftIfNeeded(page);
-  await screenshot(page, '06b-keyword-gen');
-  const heading2 = await page.evaluate(() => {
-    const h = document.querySelector('h1, h2');
-    return h ? h.textContent.trim() : '';
-  });
-  console.log('  Page heading:', heading2);
-  await clickNext(page, 'Next (keyword generation)');
+  await screenshot(page, '07b-keyword-gen');
+
+  // This page has "Skip" and "Generate" buttons instead of "Next"
+  let skipClicked = false;
+  try {
+    await page.click('text=Skip', { timeout: 5000 });
+    skipClicked = true;
+    console.log('  Clicked: Skip (keyword generation)');
+  } catch {
+    // Fallback: JS click
+    skipClicked = await page.evaluate(() => {
+      const els = document.querySelectorAll('button, [role="button"], material-button, a, span');
+      for (const el of els) {
+        if (el.textContent.trim() === 'Skip' && el.offsetHeight > 0) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    });
+    if (skipClicked) console.log('  Clicked: Skip (JS fallback)');
+  }
+
+  if (!skipClicked) {
+    // Maybe the page didn't transition — try Next as fallback
+    console.log('  Skip not found — trying Next...');
+    await clickNext(page, 'Next (keyword generation)');
+  } else {
+    await page.waitForTimeout(humanDelay());
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+
+  await screenshot(page, '07c-after-keyword-gen');
 }
 
 async function step8_keywordsAndAds(page) {
