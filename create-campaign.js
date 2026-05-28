@@ -85,16 +85,11 @@ async function launchBrowser() {
   ensureDir(PROFILE_DIR);
   return chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
-    channel: 'chrome',  // Use system Chrome instead of Playwright Chromium
     viewport: { width: 1400, height: 950 },
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-extensions',
-      '--disable-popup-blocking',
-      '--disable-features=IsolateOrigins,site-per-process,SafeBrowsingEnhancedProtection',
-      '--disable-component-extensions-with-background-pages',
     ],
   });
 }
@@ -294,33 +289,41 @@ async function detectWizardStep(page) {
 // Dismiss the "Turn off ad blockers" overlay that prevents saving
 async function dismissAdBlockerWarning(page) {
   const dismissed = await page.evaluate(() => {
-    // Look for close/dismiss buttons near the ad blocker warning
+    const results = [];
+    // Find ALL elements related to the ad blocker warning and REMOVE them from DOM
     const allEls = document.querySelectorAll('*');
     for (const el of allEls) {
       const t = el.textContent.trim();
       if (t.includes('Turn off ad blockers') && el.offsetHeight > 0) {
-        // Try to find a close/dismiss/X button nearby
-        const parent = el.closest('[role="dialog"], [role="alertdialog"], [class*="dialog"], [class*="overlay"], [class*="banner"]') || el.parentElement?.parentElement?.parentElement;
-        if (parent) {
-          const closeBtn = parent.querySelector('[aria-label="Close"], [aria-label="Dismiss"], button, material-button');
-          if (closeBtn && closeBtn.textContent.trim().length < 20) {
-            closeBtn.click();
-            return 'closed via button';
+        // Walk up to find the highest overlay/dialog container
+        let target = el;
+        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+          const style = window.getComputedStyle(p);
+          if (style.position === 'fixed' || style.position === 'absolute' ||
+              p.getAttribute('role') === 'dialog' || p.getAttribute('role') === 'alertdialog' ||
+              p.className.includes('overlay') || p.className.includes('dialog') ||
+              p.className.includes('modal') || p.className.includes('banner')) {
+            target = p;
           }
-          // Try hiding the overlay
-          parent.style.display = 'none';
-          return 'hidden overlay';
         }
-        // Hide the element directly
-        el.style.display = 'none';
-        return 'hidden element';
+        target.remove();
+        results.push('removed overlay');
       }
     }
-    return null;
+    // Also remove any full-screen overlay/backdrop that might block interaction
+    for (const el of document.querySelectorAll('[class*="overlay"], [class*="backdrop"], [class*="scrim"]')) {
+      const style = window.getComputedStyle(el);
+      if ((style.position === 'fixed' || style.position === 'absolute') &&
+          el.offsetWidth > window.innerWidth * 0.8 && el.offsetHeight > window.innerHeight * 0.8) {
+        el.remove();
+        results.push('removed backdrop');
+      }
+    }
+    return results.length > 0 ? results.join(', ') : null;
   });
   if (dismissed) {
     console.log(`  Dismissed ad blocker warning: ${dismissed}`);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
   }
   return dismissed;
 }
