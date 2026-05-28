@@ -85,11 +85,16 @@ async function launchBrowser() {
   ensureDir(PROFILE_DIR);
   return chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
+    channel: 'chrome',  // Use system Chrome instead of Playwright Chromium
     viewport: { width: 1400, height: 950 },
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-first-run',
       '--no-default-browser-check',
+      '--disable-extensions',
+      '--disable-popup-blocking',
+      '--disable-features=IsolateOrigins,site-per-process,SafeBrowsingEnhancedProtection',
+      '--disable-component-extensions-with-background-pages',
     ],
   });
 }
@@ -286,11 +291,46 @@ async function detectWizardStep(page) {
 // PRE-WIZARD STEPS (scrollable single pages)
 // ---------------------------------------------------------------------------
 
+// Dismiss the "Turn off ad blockers" overlay that prevents saving
+async function dismissAdBlockerWarning(page) {
+  const dismissed = await page.evaluate(() => {
+    // Look for close/dismiss buttons near the ad blocker warning
+    const allEls = document.querySelectorAll('*');
+    for (const el of allEls) {
+      const t = el.textContent.trim();
+      if (t.includes('Turn off ad blockers') && el.offsetHeight > 0) {
+        // Try to find a close/dismiss/X button nearby
+        const parent = el.closest('[role="dialog"], [role="alertdialog"], [class*="dialog"], [class*="overlay"], [class*="banner"]') || el.parentElement?.parentElement?.parentElement;
+        if (parent) {
+          const closeBtn = parent.querySelector('[aria-label="Close"], [aria-label="Dismiss"], button, material-button');
+          if (closeBtn && closeBtn.textContent.trim().length < 20) {
+            closeBtn.click();
+            return 'closed via button';
+          }
+          // Try hiding the overlay
+          parent.style.display = 'none';
+          return 'hidden overlay';
+        }
+        // Hide the element directly
+        el.style.display = 'none';
+        return 'hidden element';
+      }
+    }
+    return null;
+  });
+  if (dismissed) {
+    console.log(`  Dismissed ad blocker warning: ${dismissed}`);
+    await page.waitForTimeout(1000);
+  }
+  return dismissed;
+}
+
 async function step1_navigate(page) {
   console.log('\n[1/10] Navigating to campaign creation...');
 
   await page.goto(ADS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(humanDelay());
+  await dismissAdBlockerWarning(page);
   await selectAccountIfNeeded(page);
 
   await page.goto('https://ads.google.com/aw/campaigns/new', {
@@ -1028,6 +1068,9 @@ async function step10_review(page) {
   console.log('\n[10/10] Review page...');
   await dismissDraftIfNeeded(page);
   await dismissConfirmDialog(page);
+  await dismissAdBlockerWarning(page);
+  await page.waitForTimeout(3000);
+  await dismissAdBlockerWarning(page);
   await screenshot(page, '10-review');
 
   console.log('\n========================================');
@@ -1046,10 +1089,57 @@ async function step10_review(page) {
   if (PUBLISH_MODE) {
     console.log('\n  --publish mode: scrolling to find Publish button...');
 
-    // Scroll to the very bottom of the review page to reveal Publish button
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    // Google Ads uses a nested scrollable container — scroll it, not the window
+    await page.evaluate(() => {
+      // Strategy 1: scroll any scrollable container that holds review content
+      const containers = document.querySelectorAll('div, section, main');
+      for (const c of containers) {
+        if (c.scrollHeight > c.clientHeight + 200 && c.clientHeight > 300) {
+          c.scrollTop = c.scrollHeight;
+        }
+      }
+      // Strategy 2: also try body and documentElement
+      window.scrollTo(0, document.body.scrollHeight);
+      document.documentElement.scrollTop = document.documentElement.scrollHeight;
+      // Strategy 3: find "Publish" or bottom elements and scrollIntoView
+      const allEls = document.querySelectorAll('material-button, button, [role="button"]');
+      for (const el of allEls) {
+        const t = el.textContent.trim();
+        if (t.includes('Publish') && el.offsetWidth > 0) {
+          el.scrollIntoView({ block: 'center' });
+          return;
+        }
+      }
+      // Scroll the "Leave feedback" link into view as a fallback to reach the bottom
+      const feedback = Array.from(document.querySelectorAll('span, a')).find(
+        e => e.textContent.trim() === 'Leave feedback' && e.offsetWidth > 0
+      );
+      if (feedback) feedback.scrollIntoView({ block: 'center' });
+    });
     await page.waitForTimeout(3000);
     await screenshot(page, '10b-review-bottom');
+
+    // Check for error messages on the review page
+    const errors = await page.evaluate(() => {
+      const errEls = document.querySelectorAll('[class*="error"], [class*="warning"], [class*="alert"]');
+      const msgs = [];
+      for (const el of errEls) {
+        if (el.offsetHeight > 0 && el.textContent.trim().length > 5 && el.textContent.trim().length < 200) {
+          msgs.push(el.textContent.trim());
+        }
+      }
+      // Also check for red text
+      const allEls = document.querySelectorAll('span, div, p');
+      for (const el of allEls) {
+        const style = window.getComputedStyle(el);
+        if (style.color.includes('211, 47') || style.color.includes('213, 0') || style.color.includes('234, 67') || style.color.includes('244, 67')) {
+          const t = el.textContent.trim();
+          if (t.length > 3 && t.length < 200 && !msgs.includes(t)) msgs.push(t);
+        }
+      }
+      return [...new Set(msgs)].slice(0, 10);
+    });
+    console.log('  Review errors:', JSON.stringify(errors));
 
     // Dump all visible buttons for debugging
     const allBtns = await page.evaluate(() => {
