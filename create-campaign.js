@@ -9,6 +9,7 @@ const OUTPUT_DIR = path.join(__dirname, 'output');
 const ADS_URL = 'https://ads.google.com';
 const ACCOUNT_ID = '0849'; // Production account
 const TEST_MODE = process.argv.includes('--test');
+const PUBLISH_MODE = process.argv.includes('--publish');
 
 // Human-like random delay between actions (1.5–4s)
 function humanDelay() {
@@ -1042,9 +1043,63 @@ async function step10_review(page) {
   console.log('  Review the browser window and click');
   console.log('  "Publish" manually when ready.');
   console.log('========================================');
+  if (PUBLISH_MODE) {
+    console.log('\n  --publish mode: clicking Publish button...');
+    await page.waitForTimeout(3000);
+
+    // Click the Publish campaign button
+    let published = false;
+    try {
+      await page.click('material-button:has-text("Publish")', { timeout: 5000 });
+      published = true;
+      console.log('  Clicked: Publish (material-button)');
+    } catch {
+      try {
+        await page.click('button:has-text("Publish")', { timeout: 5000 });
+        published = true;
+        console.log('  Clicked: Publish (button)');
+      } catch {
+        published = await page.evaluate(() => {
+          const btns = document.querySelectorAll('material-button, button, [role="button"]');
+          for (const btn of btns) {
+            if (btn.textContent.trim().includes('Publish') && btn.offsetWidth > 0) {
+              btn.scrollIntoView({ block: 'center' });
+              btn.click();
+              const rect = btn.getBoundingClientRect();
+              const evt = new MouseEvent('click', {
+                bubbles: true, cancelable: true, view: window,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2,
+              });
+              btn.dispatchEvent(evt);
+              return true;
+            }
+          }
+          return false;
+        });
+        if (published) console.log('  Clicked: Publish (JS dispatch)');
+      }
+    }
+
+    if (published) {
+      await page.waitForTimeout(5000);
+      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForTimeout(3000);
+      await screenshot(page, '10b-after-publish');
+      console.log('  Campaign published! Waiting 10s for confirmation...');
+      await page.waitForTimeout(10000);
+      await screenshot(page, '10c-published-final');
+    } else {
+      console.log('  WARNING: Publish button not found. Browser stays open 120s for manual publish.');
+      await page.waitForTimeout(120000);
+    }
+    return;
+  }
+
   if (TEST_MODE) {
-    console.log('\n  --test mode: NOT publishing. Closing in 5s...');
-    await page.waitForTimeout(5000);
+    console.log('\n  --test mode: NOT publishing. Browser stays open 120s for manual action...');
+    console.log('  Go to the Chromium window to review or publish.');
+    await page.waitForTimeout(120000);
     return;
   }
 
@@ -1095,7 +1150,7 @@ Example:
   }
 
   console.log('Launching Google Ads Campaign Creator...');
-  console.log(`Account: ${ACCOUNT_ID} | Mode: ${TEST_MODE ? 'TEST (no publish)' : 'INTERACTIVE'}`);
+  console.log(`Account: ${ACCOUNT_ID} | Mode: ${PUBLISH_MODE ? 'AUTO-PUBLISH' : TEST_MODE ? 'TEST (120s window)' : 'INTERACTIVE'}`);
   console.log(`Campaign: ${CAMPAIGN.name}`);
   console.log(`Budget: $${CAMPAIGN.dailyBudget}/day | Location: ${CAMPAIGN.targetLocation}`);
   console.log(`Keywords: ${CAMPAIGN.keywords.length} | Headlines: ${CAMPAIGN.headlines.length}`);
