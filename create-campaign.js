@@ -1044,8 +1044,23 @@ async function step10_review(page) {
   console.log('  "Publish" manually when ready.');
   console.log('========================================');
   if (PUBLISH_MODE) {
-    console.log('\n  --publish mode: clicking Publish button...');
+    console.log('\n  --publish mode: scrolling to find Publish button...');
+
+    // Scroll to the very bottom of the review page to reveal Publish button
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(3000);
+    await screenshot(page, '10b-review-bottom');
+
+    // Dump all visible buttons for debugging
+    const allBtns = await page.evaluate(() => {
+      const btns = document.querySelectorAll('material-button, button, [role="button"]');
+      return Array.from(btns).filter(b => b.offsetWidth > 0).map(b => ({
+        text: b.textContent.trim().substring(0, 40),
+        tag: b.tagName,
+        y: Math.round(b.getBoundingClientRect().top),
+      }));
+    });
+    console.log('  Visible buttons:', JSON.stringify(allBtns));
 
     // Click the Publish campaign button
     let published = false;
@@ -1062,7 +1077,8 @@ async function step10_review(page) {
         published = await page.evaluate(() => {
           const btns = document.querySelectorAll('material-button, button, [role="button"]');
           for (const btn of btns) {
-            if (btn.textContent.trim().includes('Publish') && btn.offsetWidth > 0) {
+            const t = btn.textContent.trim();
+            if ((t.includes('Publish') || t.includes('publish')) && btn.offsetWidth > 0) {
               btn.scrollIntoView({ block: 'center' });
               btn.click();
               const rect = btn.getBoundingClientRect();
@@ -1085,10 +1101,10 @@ async function step10_review(page) {
       await page.waitForTimeout(5000);
       await page.waitForLoadState('networkidle').catch(() => {});
       await page.waitForTimeout(3000);
-      await screenshot(page, '10b-after-publish');
+      await screenshot(page, '10c-after-publish');
       console.log('  Campaign published! Waiting 10s for confirmation...');
       await page.waitForTimeout(10000);
-      await screenshot(page, '10c-published-final');
+      await screenshot(page, '10d-published-final');
     } else {
       console.log('  WARNING: Publish button not found. Browser stays open 120s for manual publish.');
       await page.waitForTimeout(120000);
