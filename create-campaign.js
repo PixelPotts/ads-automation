@@ -333,6 +333,16 @@ async function step1_navigate(page) {
 
   await page.goto(ADS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(humanDelay());
+
+  // Wait for login if redirected to accounts.google.com
+  const loginStart = Date.now();
+  while (Date.now() - loginStart < 120000) {
+    const url = page.url();
+    if (url.includes('ads.google.com') && !url.includes('accounts.google.com')) break;
+    console.log('  Waiting for login... (complete sign-in in browser)');
+    await page.waitForTimeout(5000);
+  }
+
   await dismissAdBlockerWarning(page);
   await selectAccountIfNeeded(page);
 
